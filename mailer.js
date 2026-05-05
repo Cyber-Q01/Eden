@@ -1,12 +1,12 @@
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-    host: '11.qservers.net',           // ← Your server
-    port: 465,                          // ← Port 465 (SSL)
-    secure: true,                       // ← true for 465
+    host: process.env.SMTP_HOST || '11.qservers.net',
+    port: parseInt(process.env.SMTP_PORT || '465'),
+    secure: process.env.SMTP_SECURE === 'true' || true,
     auth: {
-        user: 'no-reply@shalomdatatech.com',  // ← CHANGE THIS
-        pass: 'CL3zER^zp.7_[(ZF'               // ← CHANGE THIS
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
     },
     tls: {
         rejectUnauthorized: false

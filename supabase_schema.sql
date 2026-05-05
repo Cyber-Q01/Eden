@@ -29,21 +29,38 @@ CREATE POLICY "Users can view their own profile."
   USING (auth.uid() = id);
 
 -- Users can update their own profile
+-- Users can update their own profile (restricted to non-sensitive columns)
+-- Note: In a production environment, it's better to use a dedicated function or
+-- restrict column updates via a trigger or more specific RLS if your Supabase version supports it.
 CREATE POLICY "Users can update their own profile."
   ON public.users FOR UPDATE
-  USING (auth.uid() = id);
+  USING (auth.uid() = id)
+  WITH CHECK (
+    auth.uid() = id AND
+    role = (SELECT role FROM public.users WHERE id = auth.uid()) -- Prevent role changes
+  );
 
 -- Trigger to automatically create a public.user when an auth.user signs up
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  assigned_role user_role;
 BEGIN
+  -- Validate and restrict role assignment during signup
+  assigned_role := COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'TENANT'::user_role);
+
+  -- Prevent anyone from signing up as an ADMIN
+  IF assigned_role = 'ADMIN' THEN
+    assigned_role := 'TENANT'::user_role;
+  END IF;
+
   INSERT INTO public.users (id, email, first_name, last_name, role)
   VALUES (
     NEW.id,
     NEW.email,
     NEW.raw_user_meta_data->>'firstName',
     NEW.raw_user_meta_data->>'lastName',
-    COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'TENANT'::user_role)
+    assigned_role
   );
   RETURN NEW;
 END;
@@ -319,6 +336,11 @@ CREATE TABLE public.complaint_requests (
 );
 
 CREATE INDEX idx_complaints_user ON public.complaint_requests(user_id);
+
+-- Performance Indexes
+CREATE INDEX idx_properties_landlord_id ON public.properties(landlord_id);
+CREATE INDEX idx_properties_created_at ON public.properties(created_at DESC);
+CREATE INDEX idx_favorites_user_id ON public.favorites(user_id);
 
 ALTER TABLE public.complaint_requests ENABLE ROW LEVEL SECURITY;
 

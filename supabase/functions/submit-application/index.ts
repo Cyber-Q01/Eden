@@ -84,10 +84,18 @@ serve(async (req) => {
         try {
             const text = await req.text()
             if (text) {
-                bodyData = JSON.parse(text)
+                try {
+                    bodyData = JSON.parse(text)
+                } catch (e) {
+                    console.error('[Body parse ERROR]: invalid JSON', e)
+                    return new Response(
+                        JSON.stringify({ error: 'Invalid JSON body' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                    )
+                }
             }
         } catch (e) {
-            console.log('[Body parse]: no body or invalid JSON')
+            console.log('[Body read]: no body')
         }
 
         console.log('[Request]: method =', req.method, '| body =', bodyData)

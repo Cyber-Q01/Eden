@@ -1,8 +1,10 @@
+import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Image,
     Modal,
     Pressable,
@@ -14,61 +16,80 @@ import {
 } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
+import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
+import { useProfile } from '../../hooks/useProfile';
+import { sanitizeDigits, sanitizeName, validateAll, validateName, validatePhone } from '../../lib/validation';
 
 const EditProfileScreen = () => {
     const router = useRouter();
-    const [fullName, setFullName] = useState('John Bosco');
-    const [email, setEmail] = useState('john@gmail.com');
-    const [phone, setPhone] = useState('+23481000000');
-    const [birthDate, setBirthDate] = useState('');
-    const [gender, setGender] = useState('');
-    const [address, setAddress] = useState('john@gmail.com');
-    const [avatar, setAvatar] = useState('https://i.pravatar.cc/200');
     const { colors } = useTheme();
+    const { showError } = useToast();
+    const { profile, loading, updateProfile } = useProfile();
 
-    // Modal states
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [phone, setPhone] = useState('');
+    const [gender, setGender] = useState('');
+    const [avatar, setAvatar] = useState('https://i.pravatar.cc/200');
+    const [saving, setSaving] = useState(false);
     const [showGenderModal, setShowGenderModal] = useState(false);
 
-    // Date picker is simplified for now - in a real app would use a library
-    // For this implementation, we'll use a text input that formats or a simple modal if needed
-    // But strictly following "no heavy external dependencies" for just one field if possible unless requested.
-    // However, robust date picking usually needs a lib. I'll stick to text input with placeholder for now to match UI visually
-    // or a simple list modal if it was a select. The design shows a dropdown arrow for date, implying a picker.
-    // I will simulate a picker with a modal for now or just text input for simplicity unless I add a lib.
-    // Let's use a simple text input that looks like a selector for "Date" to keep it simple, or a modal with a calendar if I had one.
-    // Actually, I'll make it a text input that allows typing for now, or just a placeholder.
+    // Pre-fill form once profile is loaded
+    useEffect(() => {
+        if (profile) {
+            setFirstName(profile.first_name ?? '');
+            setLastName(profile.last_name ?? '');
+            setPhone(profile.phone ?? '');
+            setGender(profile.gender ?? '');
+        }
+    }, [profile]);
 
     const pickImage = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 1,
+            quality: 0.8,
         });
-
         if (!result.canceled) {
             setAvatar(result.assets[0].uri);
         }
     };
 
-    const handleSave = () => {
-        // Implement save logic here
-        console.log('Saved:', { fullName, email, phone, birthDate, gender, address, avatar });
-        router.back();
+    const handleSave = async () => {
+        const validationError = validateAll([
+            { check: () => validateName(firstName, 'First name') },
+            { check: () => validateName(lastName, 'Last name') },
+            { check: () => phone ? validatePhone(phone) : null },
+        ]);
+        if (validationError) {
+            showError({ type: 'unknown', title: 'Validation Error', message: validationError });
+            return;
+        }
+
+        setSaving(true);
+        const { error } = await updateProfile({
+            first_name: sanitizeName(firstName),
+            last_name: sanitizeName(lastName),
+            phone: sanitizeDigits(phone),
+            gender,
+        });
+        setSaving(false);
+        if (!error) {
+            router.back();
+        }
     };
 
     return (
         <ScreenWrapper>
             <View style={[styles.header, { backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={colors.text} />
-                </TouchableOpacity>
+                <BackButton />
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
                 {/* Avatar Section */}
                 <View style={styles.avatarContainer}>
@@ -81,70 +102,50 @@ const EditProfileScreen = () => {
                 </View>
 
                 {/* Form Fields */}
-                <View style={styles.form}>
-                    <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
-                        <ThemedTextInput
-                            value={fullName}
-                            onChangeText={setFullName}
-                            placeholder="Enter full name"
-                        />
-                    </View>
+                {loading ? <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} /> : (
+                    <View style={styles.form}>
+                        <View style={styles.inputGroup}>
+                            <Text style={[styles.label, { color: colors.textSecondary }]}>First Name</Text>
+                            <ThemedTextInput
+                                value={firstName}
+                                onChangeText={(t) => setFirstName(sanitizeName(t))}
+                                placeholder="Enter first name"
+                            />
+                        </View>
 
-                    <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Email Address</Text>
-                        <ThemedTextInput
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                            placeholder="Enter email"
-                        />
-                    </View>
+                        <View style={styles.inputGroup}>
+                            <Text style={[styles.label, { color: colors.textSecondary }]}>Last Name</Text>
+                            <ThemedTextInput
+                                value={lastName}
+                                onChangeText={(t) => setLastName(sanitizeName(t))}
+                                placeholder="Enter last name"
+                            />
+                        </View>
 
-                    <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Phone Number</Text>
-                        <ThemedTextInput
-                            value={phone}
-                            onChangeText={setPhone}
-                            keyboardType="phone-pad"
-                            placeholder="Enter phone number"
-                        />
-                    </View>
+                        <View style={styles.inputGroup}>
+                            <Text style={[styles.label, { color: colors.textSecondary }]}>Phone Number</Text>
+                            <ThemedTextInput
+                                value={phone}
+                                onChangeText={(t) => setPhone(sanitizeDigits(t))}
+                                keyboardType="phone-pad"
+                                placeholder="Enter phone number"
+                            />
+                        </View>
 
-                    <View style={styles.inputGroup}>
-                        {/* Visual dropdown for Birth Date */}
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Birth Date</Text>
-                        <TouchableOpacity style={[styles.selectButton, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {/* Open Date Picker */ }}>
-                            <Text style={[styles.selectText, { color: birthDate ? colors.text : colors.textSecondary }]}>
-                                {birthDate || 'Select your birth date'}
-                            </Text>
-                            <Ionicons name="caret-down-outline" size={16} color={colors.textSecondary} />
-                        </TouchableOpacity>
+                        <View style={styles.inputGroup}>
+                            <Text style={[styles.label, { color: colors.textSecondary }]}>Gender</Text>
+                            <TouchableOpacity style={[styles.selectButton, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowGenderModal(true)}>
+                                <Text style={[styles.selectText, { color: gender ? colors.text : colors.textSecondary }]}>
+                                    {gender || 'Select Gender'}
+                                </Text>
+                                <Ionicons name="caret-down-outline" size={16} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
+                )}
 
-                    <View style={styles.inputGroup}>
-                        {/* Visual dropdown for Gender */}
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Gender</Text>
-                        <TouchableOpacity style={[styles.selectButton, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowGenderModal(true)}>
-                            <Text style={[styles.selectText, { color: gender ? colors.text : colors.textSecondary }]}>
-                                {gender || 'Gender'}
-                            </Text>
-                            <Ionicons name="caret-down-outline" size={16} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Address</Text>
-                        <ThemedTextInput
-                            value={address}
-                            onChangeText={setAddress}
-                            placeholder="Enter address"
-                        />
-                    </View>
-                </View>
-
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
+                    {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
                 </TouchableOpacity>
 
             </ScrollView>

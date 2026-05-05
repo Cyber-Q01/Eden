@@ -1,21 +1,20 @@
 import PropertyCard from '@/components/PropertyCard';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
+import RetryOverlay from '../../components/RetryOverlay';
+import { useFavorites } from '../../hooks/useProperties';
+import { useRouter } from 'expo-router';
 
 const SavedScreen = () => {
     const { colors } = useTheme();
-    const savedItems = [
-        { id: '1', image: require('../../assets/images/Homes/home1.png'), title: '2 Bedroom Apartment', price: 'N350,000/year', location: 'Lekki Phase 1' },
-        { id: '2', image: require('../../assets/images/Homes/home2.png'), title: '2 Bedroom Apartment', price: 'N350,000/year', location: 'Lekki Phase 1' },
-        { id: '3', image: require('../../assets/images/Homes/home3.png'), title: '2 Bedroom Apartment', price: 'N350,000/year', location: 'Lekki Phase 1' },
-        { id: '4', image: require('../../assets/images/Homes/home1.png'), title: '2 Bedroom Apartment', price: 'N350,000/year', location: 'Lekki Phase 1' },
-    ];
+    const router = useRouter();
+    const { favorites, loading, error, removeFavorite, refetch } = useFavorites();
 
     return (
-        <ScreenWrapper style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <View style={[styles.header, { backgroundColor: colors.background }]}>
                 <TouchableOpacity style={[styles.filterButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.filterText, { color: colors.textSecondary }]}>Sort by Filter</Text>
@@ -24,19 +23,30 @@ const SavedScreen = () => {
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                {savedItems.map((item) => (
-                    <PropertyCard
-                        key={item.id}
-                        image={item.image}
-                        title={item.title}
-                        price={item.price}
-                        location={item.location}
-                        variant="horizontal"
-                        containerStyle={{ marginBottom: 0 }} // Gap is handled by scrollContent
-                        onRemovePress={() => { }}
-                        onPress={() => { }}
-                    />
-                ))}
+                {loading ? (
+                    <ActivityIndicator size="large" color={colors.primary} />
+                ) : error ? (
+                    <RetryOverlay message="Couldn't load favorites." onRetry={refetch} />
+                ) : favorites.length === 0 ? (
+                    <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 40 }}>You have no saved properties.</Text>
+                ) : (
+                    favorites.map((item) => {
+                        if (!item) return null;
+                        return (
+                            <PropertyCard
+                                key={item.id}
+                                image={item.images?.[0] ? { uri: item.images[0] } : require('../../assets/images/Homes/home1.png')}
+                                title={item.title}
+                                price={`₦${item.price}`}
+                                location={item.location}
+                                variant="horizontal"
+                                containerStyle={{ marginBottom: 0 }} // Gap is handled by scrollContent
+                                onRemovePress={() => removeFavorite(item.id)}
+                                onPress={() => router.push(`/property/${item.id}`)}
+                            />
+                        )
+                    })
+                )}
             </ScrollView>
         </ScreenWrapper>
     );

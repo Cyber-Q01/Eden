@@ -27,8 +27,8 @@ const ActivatedScreen = () => {
 
                 <View style={styles.footer}>
                     <CustomButton
-                        title="Continue"
-                        onPress={() => router.push('/profilesetup/personal-info')}
+                        title="Start Exploring"
+                        onPress={() => router.replace('/(tabs)')}
                     />
                 </View>
             </View>

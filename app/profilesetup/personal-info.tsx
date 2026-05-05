@@ -13,7 +13,7 @@ const PersonalInfoScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.header}>
                     <Text style={[styles.title, { color: colors.primary }]}>Personal Information</Text>
                     <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Tell us a bit about yourself before verification</Text>

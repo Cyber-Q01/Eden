@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  TENANT
+  LANDLORD
+  ADMIN
+}
+
+model User {
+  id              String       @id @default(uuid())
+  email           String       @unique
+  password        String
+  firstName       String
+  lastName        String
+  role            Role         @default(TENANT)
+  
+  // SmileID Verification Status
+  isVerified      Boolean      @default(false)
+  smileJobId      String?
+  idNumber        String?
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  properties      Property[]   // IF Landlord
+  favorites       Favorite[]   // IF Tenant
+}
+
+model Property {
+  id              String       @id @default(uuid())
+  title           String
+  description     String
+  price           Float
+  location        String
+  type            String       // e.g. "2 Bedroom", "Studio"
+  images          String[]
+  amenities       String[]
+
+  landlordId      String
+  landlord        User         @relation(fields: [landlordId], references: [id])
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  favoritedBy     Favorite[]
+}
+
+model Favorite {
+  id              String       @id @default(uuid())
+  userId          String
+  propertyId      String
+
+  user            User         @relation(fields: [userId], references: [id])
+  property        Property     @relation(fields: [propertyId], references: [id])
+
+  createdAt       DateTime     @default(now())
+
+  @@unique([userId, propertyId])
+}
+
+model Subscription {
+  id              String       @id @default(uuid())
+  name            String
+  price           Float
+  features        String[]
+}

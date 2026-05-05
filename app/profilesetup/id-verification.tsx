@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import CustomButton from '../../components/CustomButton';
@@ -25,48 +25,36 @@ const IDVerificationScreen = () => {
     // Replace with actual Smile ID URL generated from your backend
     const SMILE_ID_URL = 'https://hosted.smileidentity.com/v1/auth';
 
-    const handleVerify = () => {
-        if (verificationStatus.nin !== 'verified' || verificationStatus.selfie !== 'verified') {
-            Alert.alert(
-                "Incomplete Verification",
-                "Please complete both NIN and Selfie verification to proceed.",
-                [{ text: "OK" }]
-            );
+    const handleVerify = async () => {
+        if (!userType) {
+            router.replace('/(tabs)');
             return;
         }
 
+        // Landlords skip subscription — go straight to their dashboard
         if (userType === 'landlord') {
             router.replace('/landlord');
         } else {
-            router.replace('/(tabs)');
+            // Tenants must subscribe before accessing the app
+            router.replace('/subscription/activate');
         }
     };
 
     const handleStartVerification = (step: 'nin' | 'selfie') => {
+        // Mocking the Verification process directly instead of opening Smile ID Webview
         setVerificationStep(step);
         setShowNINModal(false);
-        setShowWebView(true);
-    };
+        setIsProcessing(true);
 
-    const handleWebViewMessage = (event: any) => {
-        try {
-            const data = JSON.parse(event.nativeEvent.data);
-            console.log('Smile ID Message:', data);
-
-            // Handle Smile ID callback events
-            if (data.event === 'success') {
-                if (verificationStep === 'nin') {
-                    setVerificationStatus(prev => ({ ...prev, nin: 'verified' }));
-                } else if (verificationStep === 'selfie') {
-                    setVerificationStatus(prev => ({ ...prev, selfie: 'verified' }));
-                }
-                setShowWebView(false);
-            } else if (data.event === 'error' || data.event === 'canceled') {
-                setShowWebView(false);
+        // Simulate network call
+        setTimeout(() => {
+            if (step === 'nin') {
+                setVerificationStatus(prev => ({ ...prev, nin: 'verified' }));
+            } else if (step === 'selfie') {
+                setVerificationStatus(prev => ({ ...prev, selfie: 'verified' }));
             }
-        } catch (e) {
-            console.error('Error parsing WebView message', e);
-        }
+            setIsProcessing(false);
+        }, 1500);
     };
 
     return (
@@ -141,46 +129,7 @@ const IDVerificationScreen = () => {
                 />
             </ScrollView>
 
-            <Modal
-                visible={showWebView}
-                animationType="slide"
-                presentationStyle="pageSheet" // Makes it feel more like a modal on iOS
-                onRequestClose={() => setShowWebView(false)}
-            >
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                    <View style={[
-                        styles.webViewHeader,
-                        {
-                            backgroundColor: colors.card,
-                            borderBottomColor: colors.border,
-                            paddingTop: insets.top // Fixes status bar overlap
-                        }
-                    ]}>
-                        <TouchableOpacity
-                            style={styles.backButton}
-                            onPress={() => setShowWebView(false)}
-                        >
-                            <Text style={{ color: colors.primary, fontSize: 16 }}>Back</Text>
-                        </TouchableOpacity>
-                        <Text style={[styles.webViewTitle, { color: colors.text }]}>
-                            {verificationStep === 'nin' ? 'NIN Verification' : 'Selfie Verification'}
-                        </Text>
-                        <View style={{ width: 40 }} />
-                    </View>
-                    <WebView
-                        source={{ uri: SMILE_ID_URL }}
-                        onMessage={handleWebViewMessage}
-                        javaScriptEnabled={true}
-                        domStorageEnabled={true}
-                        startInLoadingState={true}
-                        renderLoading={() => (
-                            <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
-                                <ActivityIndicator size="large" color={colors.primary} />
-                            </View>
-                        )}
-                    />
-                </View>
-            </Modal>
+    // WebView Modal Removed as it is mocked
 
             <Modal
                 visible={showNINModal}

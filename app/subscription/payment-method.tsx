@@ -33,9 +33,7 @@ const PaymentMethodScreen = () => {
     return (
         <ScreenWrapper style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
-                </TouchableOpacity>
+                <BackButton />
                 <Text style={styles.headerTitle}>Choose Payment Method</Text>
                 <View style={{ width: 40 }} />
             </View>

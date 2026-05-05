@@ -3,25 +3,33 @@ import React from 'react';
 import { StyleSheet, Text, TextStyle, TouchableOpacity, ViewStyle } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
+import { ActivityIndicator } from 'react-native';
+
 interface CustomButtonProps {
     title: string;
     onPress: () => void;
     style?: ViewStyle;
     textStyle?: TextStyle;
+    disabled?: boolean;
+    loading?: boolean;
 }
 
-const CustomButton: React.FC<CustomButtonProps> = ({ title, onPress, style, textStyle }) => {
+const CustomButton: React.FC<CustomButtonProps> = ({ title, onPress, style, textStyle, disabled, loading }) => {
     const { colors, isDark } = useTheme();
 
     return (
-        <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[styles.wrapper, style]}>
+        <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[styles.wrapper, style, disabled && { opacity: 0.7 }]} disabled={disabled || loading}>
             <LinearGradient
                 colors={isDark ? ['#407BFF', '#003CB3'] : ['#003CB3', '#407BFF']}
                 style={styles.gradient}
                 start={{ x: 0, y: 0.5 }}
                 end={{ x: 1, y: 0.5 }}
             >
-                <Text style={[styles.text, textStyle]}>{title}</Text>
+                {loading ? (
+                    <ActivityIndicator color="#FFF" />
+                ) : (
+                    <Text style={[styles.text, textStyle]}>{title}</Text>
+                )}
             </LinearGradient>
         </TouchableOpacity>
     );

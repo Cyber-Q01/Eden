@@ -1,114 +1,75 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
-
-const CHATS = [
-    {
-        id: '1',
-        name: 'Design team',
-        lastMessage: 'Awesome',
-        time: 'Today, 12:25',
-        unreadCount: 5,
-        avatar: require('../../assets/icon/profiles/profile1.png'),
-        emoji: '🔥'
-    },
-    {
-        id: '2',
-        name: 'Daily planning',
-        lastMessage: 'Ok!',
-        time: 'February, 2019',
-        unreadCount: 2,
-        avatar: require('../../assets/icon/profiles/profile2.png'),
-        emoji: '🙋'
-    },
-    {
-        id: '3',
-        name: 'Kristin Watson',
-        lastMessage: 'Sounds gooood!',
-        time: 'February, 2019',
-        avatar: require('../../assets/icon/profiles/profile3.png'),
-    },
-    {
-        id: '4',
-        name: 'Marvin McKinney',
-        lastMessage: 'Got it)',
-        time: 'Desember, 2019',
-        avatar: require('../../assets/icon/profiles/profile1.png'),
-    },
-    {
-        id: '5',
-        name: 'Darrell Steward',
-        lastMessage: 'See you soon bro',
-        time: 'March, 2014',
-        avatar: require('../../assets/icon/profiles/profile2.png'),
-    },
-    {
-        id: '6',
-        name: 'Cameron Williamson',
-        lastMessage: "Can't wait)",
-        time: 'September, 2017',
-        avatar: require('../../assets/icon/profiles/profile3.png'),
-    },
-    {
-        id: '7',
-        name: 'Jerome Bell',
-        lastMessage: 'Go',
-        time: 'March 6, 2018',
-        avatar: require('../../assets/icon/profiles/profile1.png'),
-    },
-];
+import { useChat } from '../../hooks/useChat';
+import { useProfile } from '../../hooks/useProfile';
 
 const ChatScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
+    const { conversations, loading } = useChat();
+    const { profile } = useProfile();
 
-    const renderChatItem = ({ item }: { item: typeof CHATS[0] }) => (
-        <TouchableOpacity
-            style={styles.chatItem}
-            onPress={() => router.push(`/chat/${item.id}`)}
-        >
-            <View style={styles.avatarContainer}>
-                <Image source={item.avatar} style={[styles.avatar, { backgroundColor: colors.border }]} />
-                {item.emoji && (
-                    <View style={[styles.emojiBadge, { backgroundColor: colors.card }]}>
-                        <Text style={styles.emojiText}>{item.emoji}</Text>
-                    </View>
-                )}
-            </View>
-            <View style={styles.chatInfo}>
-                <View style={styles.chatHeaderRow}>
-                    <Text style={[styles.name, { color: colors.text }]}>{item.name}</Text>
-                    <Text style={[styles.time, { color: colors.textSecondary }]}>{item.time}</Text>
-                </View>
-                <View style={styles.chatFooterRow}>
-                    <View style={styles.messageRow}>
-                        {item.emoji && <Text style={styles.lastMessageEmoji}>{item.emoji} </Text>}
-                        <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>{item.lastMessage}</Text>
-                    </View>
-                    {item.unreadCount && (
-                        <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.unreadCount}>{item.unreadCount}</Text>
-                        </View>
+    const renderChatItem = ({ item }: { item: any }) => {
+        // Determine the other participant's details
+        const otherUser = item.participant_a?.id === profile?.id
+            ? item.participant_b
+            : item.participant_a;
+        
+        const name = otherUser?.first_name 
+            ? `${otherUser.first_name} ${otherUser.last_name || ''}`.trim() 
+            : 'User';
+        const avatar = otherUser?.user_biodata?.profile_photo;
+
+        return (
+            <TouchableOpacity
+                style={styles.chatItem}
+                onPress={() => router.push(`/chat/${item.id}`)}
+            >
+                <View style={styles.avatarContainer}>
+                    {avatar ? (
+                        <Image source={{ uri: avatar }} style={[styles.avatar, { backgroundColor: colors.border }]} />
+                    ) : (
+                        <Image source={require('../../assets/icon/profiles/profile1.png')} style={[styles.avatar, { backgroundColor: colors.border }]} />
                     )}
                 </View>
-            </View>
-        </TouchableOpacity>
-    );
+                <View style={styles.chatInfo}>
+                    <View style={styles.chatHeaderRow}>
+                        <Text style={[styles.name, { color: colors.text }]}>{name}</Text>
+                        <Text style={[styles.time, { color: colors.textSecondary }]}>
+                            {item.last_message_at ? new Date(item.last_message_at).toLocaleDateString() : ''}
+                        </Text>
+                    </View>
+                    <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {item.last_message_text ?? 'No messages yet'}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+        );
+    };
+
 
     return (
-        <ScreenWrapper style={styles.screen}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <View style={styles.header}>
                 <View style={styles.userInfo}>
-                    <Image
-                        source={require('../../assets/icon/profiles/profile1.png')}
-                        style={[styles.userAvatar, { backgroundColor: colors.border }]}
-                    />
+                    {profile?.user_biodata?.profile_photo ? (
+                         <Image
+                            source={{ uri: profile.user_biodata.profile_photo }}
+                            style={[styles.userAvatar, { backgroundColor: colors.border }]}
+                        />
+                    ) : (
+                        <Image
+                            source={require('../../assets/icon/profiles/profile1.png')}
+                            style={[styles.userAvatar, { backgroundColor: colors.border }]}
+                        />
+                    )}
                     <View>
-                        <Text style={[styles.greetingText, { color: colors.textSecondary }]}>Good morning</Text>
-                        <Text style={[styles.userName, { color: colors.text }]}>Alex bender</Text>
+                        <Text style={[styles.greetingText, { color: colors.textSecondary }]}>Chat</Text>
+                        <Text style={[styles.userName, { color: colors.text }]}>{profile?.first_name} {profile?.last_name}</Text>
                     </View>
                 </View>
                 <View style={styles.headerActions}>
@@ -124,18 +85,20 @@ const ChatScreen = () => {
             <View style={[styles.content, { backgroundColor: colors.card }]}>
                 <View style={styles.titleRow}>
                     <Text style={[styles.title, { color: colors.text }]}>Chats</Text>
-                    <TouchableOpacity>
-                        <Text style={[styles.manageText, { color: colors.primary }]}>Manage</Text>
-                    </TouchableOpacity>
                 </View>
-
-                <FlatList
-                    data={CHATS}
-                    renderItem={renderChatItem}
-                    keyExtractor={item => item.id}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                />
+                {loading ? (
+                    <ActivityIndicator size="large" color={colors.primary} />
+                ) : conversations.length === 0 ? (
+                    <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 40 }}>No conversations yet.</Text>
+                ) : (
+                    <FlatList
+                        data={conversations}
+                        renderItem={renderChatItem}
+                        keyExtractor={item => item.id}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                    />
+                )}
             </View>
         </ScreenWrapper>
     );

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
+    ActivityIndicator,
     Image,
     StyleSheet,
     Text,
@@ -10,40 +11,55 @@ import {
 } from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import { useTheme } from '../../context/ThemeContext';
+import { useBankDetails } from '../../hooks/useBankDetails';
 
 const BankAccountScreen = () => {
     const router = useRouter();
+    const { colors } = useTheme();
+    const { bankDetails, loading } = useBankDetails();
 
     return (
         <ScreenWrapper style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#333" />
-                </TouchableOpacity>
+                <BackButton />
                 <Text style={styles.headerTitle}>Bank Account</Text>
                 <View style={{ width: 40 }} />
             </View>
 
             <View style={styles.content}>
-                <View style={styles.card}>
-                    <View style={styles.iconContainer}>
-                        <Image
-                            source={require('../../assets/images/bank.png')}
-                            style={styles.bankIcon}
-                            resizeMode="contain"
+                {loading ? (
+                    <ActivityIndicator size="large" color={colors.primary} />
+                ) : bankDetails ? (
+                    <View style={styles.card}>
+                        <Text style={[styles.title, { color: colors.text }]}>{bankDetails.bank_name}</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{bankDetails.account_number}</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{bankDetails.account_name}</Text>
+                        <CustomButton
+                            title="Update Bank Account"
+                            onPress={() => router.push('/landlord-screens/add-bank')}
+                            style={styles.button}
                         />
                     </View>
-
-                    <Text style={styles.title}>No Bank Account Added Yet</Text>
-                    <Text style={styles.subtitle}>Add a bank account to receive payments</Text>
-
-                    <CustomButton
-                        title="Add Bank Account"
-                        onPress={() => router.push('/landlord-screens/add-bank')}
-                        style={styles.button}
-                    />
-                </View>
+                ) : (
+                    <View style={styles.card}>
+                        <View style={styles.iconContainer}>
+                            <Image
+                                source={require('../../assets/images/bank.png')}
+                                style={styles.bankIcon}
+                                resizeMode="contain"
+                            />
+                        </View>
+                        <Text style={[styles.title, { color: colors.text }]}>No Bank Account Added Yet</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Add a bank account to receive payments</Text>
+                        <CustomButton
+                            title="Add Bank Account"
+                            onPress={() => router.push('/landlord-screens/add-bank')}
+                            style={styles.button}
+                        />
+                    </View>
+                )}
             </View>
         </ScreenWrapper>
     );

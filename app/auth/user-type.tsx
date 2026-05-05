@@ -1,11 +1,14 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
 
-const { width } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
+
+// Scale down on small phones (< 700px tall)
+const isSmallScreen = height < 700;
 
 const UserTypeScreen = () => {
     const router = useRouter();
@@ -19,7 +22,12 @@ const UserTypeScreen = () => {
 
     return (
         <ScreenWrapper style={styles.container}>
-            <View style={styles.content}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+            >
+                {/* Top Section */}
                 <View style={styles.topSection}>
                     <Image
                         source={require('../../assets/images/EdenIcon.png')}
@@ -32,10 +40,12 @@ const UserTypeScreen = () => {
                     </Text>
                 </View>
 
+                {/* Cards */}
                 <View style={styles.optionsContainer}>
                     <TouchableOpacity
                         style={[styles.optionCard, { backgroundColor: colors.card }]}
                         onPress={() => handleSelectType('tenant')}
+                        activeOpacity={0.8}
                     >
                         <Image
                             source={require('../../assets/images/userType/tenant.png')}
@@ -51,6 +61,7 @@ const UserTypeScreen = () => {
                     <TouchableOpacity
                         style={[styles.optionCard, { backgroundColor: colors.card }]}
                         onPress={() => handleSelectType('landlord')}
+                        activeOpacity={0.8}
                     >
                         <Image
                             source={require('../../assets/images/userType/landlord.png')}
@@ -63,7 +74,7 @@ const UserTypeScreen = () => {
                         </Text>
                     </TouchableOpacity>
                 </View>
-            </View>
+            </ScrollView>
         </ScreenWrapper>
     );
 };
@@ -72,38 +83,38 @@ const styles = StyleSheet.create({
     container: {
         paddingHorizontal: 20,
     },
-    content: {
-        flex: 1,
-        paddingVertical: 40,
+    scrollContent: {
+        // Ensure it always fills the screen but can also grow
+        flexGrow: 1,
+        paddingTop: isSmallScreen ? 20 : 40,
+        paddingBottom: 40,
+        justifyContent: 'center',
     },
     topSection: {
         alignItems: 'center',
-        marginBottom: 40,
+        marginBottom: isSmallScreen ? 24 : 40,
     },
     icon: {
-        width: 80,
-        height: 80,
+        width: isSmallScreen ? 60 : 80,
+        height: isSmallScreen ? 60 : 80,
         marginBottom: 16,
     },
     title: {
-        fontSize: 28,
+        fontSize: isSmallScreen ? 24 : 28,
         fontWeight: '800',
-        color: '#0047AB',
         textAlign: 'center',
         marginBottom: 12,
     },
     subtitle: {
         fontSize: 16,
-        color: '#666',
         textAlign: 'center',
     },
     optionsContainer: {
-        gap: 20,
+        gap: isSmallScreen ? 14 : 20,
     },
     optionCard: {
-        backgroundColor: '#FFFFFF',
         borderRadius: 20,
-        padding: 24,
+        padding: isSmallScreen ? 18 : 24,
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
@@ -112,22 +123,22 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
     optionImage: {
-        width: 60,
-        height: 60,
-        marginBottom: 16,
+        width: isSmallScreen ? 48 : 60,
+        height: isSmallScreen ? 48 : 60,
+        marginBottom: 12,
     },
     optionTitle: {
-        fontSize: 18,
+        fontSize: isSmallScreen ? 16 : 18,
         fontWeight: '700',
-        color: '#0047AB',
-        marginBottom: 12,
+        marginBottom: 8,
     },
     optionDescription: {
         fontSize: 14,
-        color: '#666',
         textAlign: 'center',
         lineHeight: 20,
     },
 });
 
 export default UserTypeScreen;
+
+

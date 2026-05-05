@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import { useTheme } from '../../context/ThemeContext';
 
 const ActivateScreen = () => {
     const router = useRouter();
+    const { colors } = useTheme();
 
     const benefits = [
         {
@@ -20,53 +22,77 @@ const ActivateScreen = () => {
             description: "Schedule viewing appointments with ease"
         },
         {
-            icon: 'lock-closed-outline',
+            icon: 'lock-open-outline',
             title: "Unlock full property details",
-            description: "See exact same street address, house terms, and and Availability"
+            description: "See exact address, house terms, and availability"
         },
         {
-            icon: 'shield-outline',
-            title: "Starts secure rent payments",
-            description: "Use Escrow or direct pay surely"
+            icon: 'shield-checkmark-outline',
+            title: "Secure rent payments",
+            description: "Use Escrow or direct pay securely"
         },
         {
-            icon: 'call-outline',
-            title: "Enjoy fast support assistance",
-            description: "Get help anytoime during your house search"
+            icon: 'headset-outline',
+            title: "Priority support",
+            description: "Get help anytime during your house search"
         }
     ];
 
     return (
-        <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScreenWrapper keyboardAware={false}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                {/* Header */}
                 <View style={styles.header}>
-                    <Text style={styles.title}>Activate Your Eden Account</Text>
-                    <Text style={styles.subtitle}>Pay a one-time fee of N2,000 to unlock full{'\n'}house-hunting access</Text>
+                    <View style={styles.badge}>
+                        <Text style={styles.badgeText}>ONE-TIME • ₦2,000</Text>
+                    </View>
+                    <Text style={[styles.title, { color: colors.text }]}>
+                        Unlock Full Access
+                    </Text>
+                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                        Pay once, hunt freely. No monthly charges, no hidden fees.
+                    </Text>
                 </View>
 
+                {/* Benefits */}
                 <View style={styles.benefitsContainer}>
                     {benefits.map((benefit, index) => (
-                        <View key={index} style={styles.benefitItem}>
-                            <View style={styles.iconWrapper}>
-                                <Ionicons name={benefit.icon as any} size={24} color="#0047AB" />
+                        <View key={index} style={[styles.benefitItem, { backgroundColor: colors.card }]}>
+                            <View style={[styles.iconWrapper, { backgroundColor: colors.primary + '18' }]}>
+                                <Ionicons name={benefit.icon as any} size={22} color={colors.primary} />
                             </View>
                             <View style={styles.benefitText}>
-                                <Text style={styles.benefitTitle}>{benefit.title}</Text>
-                                <Text style={styles.benefitDescription}>{benefit.description}</Text>
+                                <Text style={[styles.benefitTitle, { color: colors.text }]}>{benefit.title}</Text>
+                                <Text style={[styles.benefitDescription, { color: colors.textSecondary }]}>{benefit.description}</Text>
                             </View>
+                            <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
                         </View>
                     ))}
                 </View>
 
+                {/* Footer */}
                 <View style={styles.footer}>
                     <CustomButton
-                        title="Activate for N2,000"
+                        title="Activate for ₦2,000"
                         onPress={() => router.push('/subscription/payment-method')}
                         style={styles.activateButton}
                     />
-                    <Text style={styles.footerNote}>
-                        No hidden charges, Renew only after renting a house
+                    <Text style={[styles.footerNote, { color: colors.textSecondary }]}>
+                        Renew only after you successfully rent a house
                     </Text>
+
+                    {/* Maybe later — small and subtle */}
+                    <TouchableOpacity
+                        onPress={() => router.replace('/(tabs)')}
+                        style={styles.skipButton}
+                    >
+                        <Text style={[styles.skipText, { color: colors.textSecondary }]}>
+                            Maybe later
+                        </Text>
+                    </TouchableOpacity>
                 </View>
             </ScrollView>
         </ScreenWrapper>
@@ -76,39 +102,53 @@ const ActivateScreen = () => {
 const styles = StyleSheet.create({
     scrollContent: {
         paddingHorizontal: 24,
-        paddingVertical: 40,
+        paddingTop: 40,
+        paddingBottom: 48,
+        flexGrow: 1,
     },
     header: {
         alignItems: 'center',
-        marginBottom: 40,
-        gap: 12,
+        marginBottom: 32,
+    },
+    badge: {
+        backgroundColor: '#FFF3E0',
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 5,
+        marginBottom: 16,
+    },
+    badgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#E65100',
+        letterSpacing: 0.5,
     },
     title: {
         fontSize: 28,
         fontWeight: '800',
-        color: '#333',
         textAlign: 'center',
+        marginBottom: 10,
     },
     subtitle: {
-        fontSize: 16,
-        color: '#666',
+        fontSize: 15,
         textAlign: 'center',
-        lineHeight: 24,
+        lineHeight: 22,
     },
     benefitsContainer: {
-        gap: 24,
-        marginBottom: 40,
+        gap: 12,
+        marginBottom: 36,
     },
     benefitItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 16,
+        gap: 14,
+        padding: 16,
+        borderRadius: 16,
     },
     iconWrapper: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#E6EEFF',
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -116,28 +156,33 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     benefitTitle: {
-        fontSize: 18,
+        fontSize: 15,
         fontWeight: '600',
-        color: '#333',
-        marginBottom: 4,
+        marginBottom: 2,
     },
     benefitDescription: {
-        fontSize: 14,
-        color: '#888',
-        lineHeight: 20,
+        fontSize: 13,
+        lineHeight: 18,
     },
     footer: {
-        gap: 16,
         alignItems: 'center',
+        gap: 12,
     },
     activateButton: {
         width: '100%',
     },
     footerNote: {
-        fontSize: 14,
-        color: '#888',
+        fontSize: 13,
         textAlign: 'center',
-        lineHeight: 20,
+    },
+    skipButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 24,
+    },
+    skipText: {
+        fontSize: 14,
+        textAlign: 'center',
+        opacity: 0.55,
     },
 });
 

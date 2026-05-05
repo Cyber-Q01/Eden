@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Modal,
     ScrollView,
     StyleSheet,
@@ -12,38 +13,56 @@ import {
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
+import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
+import { useBankDetails } from '../../hooks/useBankDetails';
+import { sanitizeDigits, sanitize, validateRequired, validateAccountNumber, validateAll } from '../../lib/validation';
 
 const AddBankScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
-    const [bank, setBank] = useState('GTBank');
-    const [accountNumber, setAccountNumber] = useState('0123456789');
-    const [accountName, setAccountName] = useState('Olawale Johnson');
+    const { showError } = useToast();
+    const { saveBankDetails, saving } = useBankDetails();
+    const [bank, setBank] = useState('');
+    const [accountNumber, setAccountNumber] = useState('');
+    const [accountName, setAccountName] = useState('');
     const [showConfirm, setShowConfirm] = useState(false);
 
     const handleSave = () => {
+        const validationError = validateAll([
+            { check: () => validateRequired(bank, 'Bank') },
+            { check: () => validateAccountNumber(accountNumber) },
+            { check: () => validateRequired(accountName, 'Account name') },
+        ]);
+        if (validationError) {
+            showError({ type: 'unknown', title: 'Validation Error', message: validationError });
+            return;
+        }
         setShowConfirm(true);
     };
 
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         setShowConfirm(false);
-        // In a real app, we'd save here
-        router.push('/landlord/profile');
+        const { error } = await saveBankDetails(
+            sanitize(bank),
+            sanitizeDigits(accountNumber),
+            sanitize(accountName)
+        );
+        if (!error) {
+            router.back();
+        }
     };
 
     return (
         <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={colors.text} />
-                </TouchableOpacity>
+                <BackButton />
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Add Bank Account</Text>
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
                 <View style={styles.inputGroup}>
                     <TouchableOpacity style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={[styles.dropdownText, { color: colors.text }]}>{bank || 'Select Bank'}</Text>

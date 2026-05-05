@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Image,
     ScrollView,
     StyleSheet,
@@ -12,11 +13,16 @@ import {
 } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
+import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
+import { useRequests } from '../../hooks/useRequests';
+import { sanitizeText, validateDescription, validateRequired, validateAll } from '../../lib/validation';
 
 const ComplaintRequestScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
+    const { showError } = useToast();
+    const { submitComplaintRequest, loading } = useRequests();
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [description, setDescription] = useState('');
     const [photos, setPhotos] = useState<(string | null)[]>([null, null, null]);
@@ -35,9 +41,8 @@ const ComplaintRequestScreen = () => {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 1,
+            quality: 0.8,
         });
-
         if (!result.canceled) {
             const newPhotos = [...photos];
             newPhotos[index] = result.assets[0].uri;
@@ -45,9 +50,23 @@ const ComplaintRequestScreen = () => {
         }
     };
 
-    const handleSubmit = () => {
-        console.log('Submitted Complaint Request:', { selectedCategory, description, photos });
-        router.back();
+    const handleSubmit = async () => {
+        const validationError = validateAll([
+            { check: () => validateRequired(selectedCategory ?? '', 'Category') },
+            { check: () => validateDescription(description, 10) },
+        ]);
+        if (validationError) {
+            showError({ type: 'unknown', title: 'Validation Error', message: validationError });
+            return;
+        }
+        const { error } = await submitComplaintRequest(
+            selectedCategory!,
+            sanitizeText(description),
+            photos as string[]
+        );
+        if (!error) {
+            router.back();
+        }
     };
 
     const renderIcon = (lib: any, name: string, color: string) => {
@@ -58,14 +77,12 @@ const ComplaintRequestScreen = () => {
     return (
         <ScreenWrapper>
             <View style={[styles.header, { backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={colors.text} />
-                </TouchableOpacity>
+                <BackButton />
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Complaint Request</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
                 {/* Category Grid */}
                 <View style={styles.gridContainer}>
@@ -114,8 +131,8 @@ const ComplaintRequestScreen = () => {
                     ))}
                 </View>
 
-                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                    <Text style={styles.submitButtonText}>Submit Request</Text>
+                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={loading}>
+                    {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitButtonText}>Submit Request</Text>}
                 </TouchableOpacity>
 
             </ScrollView>

@@ -2,11 +2,15 @@ import SearchBar from '@/components/SearchBar';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PropertyCard from '../../components/PropertyCard';
+import FilterModal from '../../components/FilterModal';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import SectionHeader from '../../components/SectionHeader';
+import RetryOverlay from '../../components/RetryOverlay';
 import { useTheme } from '../../context/ThemeContext';
+import { useProperties } from '../../hooks/useProperties';
+import { useProfile } from '../../hooks/useProfile';
 
 const { width } = Dimensions.get('window');
 
@@ -20,23 +24,13 @@ const HERO_BANNERS = [
 const HomeScreen = () => {
     const { colors } = useTheme();
     const router = useRouter();
+    const { properties, loading: propertiesLoading, error: propertiesError, refetch: refetchProperties } = useProperties();
+    const { profile, loading: profileLoading } = useProfile();
+    const [isFilterVisible, setIsFilterVisible] = useState(false);
     const categories = ['1 Bedroom', 'Duplex', '2 Bedroom', 'Studio', 'Bungalow'];
-    const recommendations = [
-        {
-            id: '1',
-            image: require('../../assets/images/Homes/home1.png'),
-            title: '2 Bedroom Apartment',
-            price: 'N350,000/year',
-            location: 'Lekki Phase 1',
-        },
-        {
-            id: '2',
-            image: require('../../assets/images/Homes/home2.png'),
-            title: '2 Bedroom Apartment',
-            price: 'N350,000/year',
-            location: 'Lekki Phase 1',
-        }
-    ];
+    
+    // Just grab top 4 newest properties as 'recommendations'
+    const recommendations = properties.slice(0, 4);
 
     const [activeBanner, setActiveBanner] = useState(0);
     const scrollRef = useRef<ScrollView>(null);
@@ -55,21 +49,33 @@ const HomeScreen = () => {
     }, [activeBanner]);
 
     return (
-        <ScreenWrapper style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {/* Header Section */}
                 <View style={styles.header}>
                     <View>
-                        <Text style={[styles.welcomeText, { color: colors.primary }]}>Hi, John</Text>
+                        <Text style={[styles.welcomeText, { color: colors.primary }]}>
+                            Hi, {profile?.first_name || 'Guest'}
+                        </Text>
                     </View>
                     <View style={styles.headerRight}>
-                        <TouchableOpacity style={styles.iconButton}>
+                        <TouchableOpacity 
+                            style={styles.iconButton}
+                            onPress={() => router.push('/shared-screens/NotificationsScreen')}
+                        >
                             <Ionicons name="notifications-outline" size={24} color={colors.text} />
                         </TouchableOpacity>
-                        <Image
-                            source={{ uri: 'https://i.pravatar.cc/100' }}
-                            style={styles.avatar}
-                        />
+                        {profile?.user_biodata?.profile_photo ? (
+                            <Image
+                                source={{ uri: profile.user_biodata.profile_photo }}
+                                style={styles.avatar}
+                            />
+                        ) : (
+                            <Image
+                                source={require('../../assets/icon/profiles/profile1.png')}
+                                style={styles.avatar}
+                            />
+                        )}
                     </View>
                 </View>
 
@@ -77,6 +83,7 @@ const HomeScreen = () => {
                 <SearchBar
                     placeholder="Search by location, price, or type"
                     style={{ paddingHorizontal: 20 }}
+                    onFilterPress={() => setIsFilterVisible(true)}
                 />
 
                 {/* Categories Section */}
@@ -152,19 +159,34 @@ const HomeScreen = () => {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.recommendationsContainer}
                 >
-                    {recommendations.map((item) => (
-                        <PropertyCard
-                            key={item.id}
-                            image={item.image}
-                            title={item.title}
-                            price={item.price}
-                            location={item.location}
-                            onPress={() => router.push(`/property/${item.id}`)}
-                            onFavoritePress={() => { }}
-                            containerStyle={styles.recommendationCard}
-                        />
-                    ))}
+                    {propertiesLoading ? (
+                        <ActivityIndicator size="large" color={colors.primary} />
+                    ) : propertiesError ? (
+                        <RetryOverlay message="Couldn't load recommendations." onRetry={refetchProperties} />
+                    ) : (
+                        recommendations.map((item) => (
+                            <PropertyCard
+                                key={item.id}
+                                image={item.images?.[0] || require('../../assets/images/Homes/home1.png')}
+                                title={item.title}
+                                price={`₦${item.price}`}
+                                location={item.location}
+                                onPress={() => router.push(`/property/${item.id}`)}
+                                onFavoritePress={() => { }}
+                                containerStyle={styles.recommendationCard}
+                            />
+                        ))
+                    )}
                 </ScrollView>
+
+                <FilterModal 
+                    visible={isFilterVisible} 
+                    onClose={() => setIsFilterVisible(false)}
+                    onApply={(filters) => {
+                        console.log('Filters applied:', filters);
+                        setIsFilterVisible(false);
+                    }}
+                />
             </ScrollView>
         </ScreenWrapper>
     );

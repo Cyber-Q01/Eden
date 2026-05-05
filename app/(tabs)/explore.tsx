@@ -1,15 +1,23 @@
 import React from 'react';
-import { Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Image, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import PropertyCard from '../../components/PropertyCard';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import SearchBar from '../../components/SearchBar';
 import SectionHeader from '../../components/SectionHeader';
+import RetryOverlay from '../../components/RetryOverlay';
+import FilterModal from '../../components/FilterModal';
 import { useTheme } from '../../context/ThemeContext';
+import { useProperties } from '../../hooks/useProperties';
 
 const { width } = Dimensions.get('window');
 
 const ExploreScreen = () => {
     const { colors } = useTheme();
+    const router = useRouter();
+    const { properties, loading: loadingProperties, error: propertiesError, refetch: refetchProperties } = useProperties();
+    const [isFilterVisible, setIsFilterVisible] = React.useState(false);
+
     const homeTypes = ['1 Bedroom', '2 Bedroom', 'Studio', 'Self-contain', 'Duplex', 'Bungalow'];
     const locations = [
         { name: 'Lagos', homes: '120+ Homes', image: require('../../assets/images/Homes/home1.png') },
@@ -17,15 +25,16 @@ const ExploreScreen = () => {
     ];
 
     return (
-        <ScreenWrapper style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 <Text style={[styles.title, { color: colors.text }]}>Explore</Text>
 
                 {/* Search Bar */}
                 <SearchBar
                     placeholder="Search by location, price, or type"
-                    showFilter={false}
+                    showFilter={true}
                     style={{ paddingHorizontal: 20 }}
+                    onFilterPress={() => setIsFilterVisible(true)}
                 />
 
                 {/* Home Types Section */}
@@ -62,16 +71,40 @@ const ExploreScreen = () => {
 
                 {/* Top Picks Section */}
                 <View style={styles.section}>
-                    <SectionHeader title="Top Picks for you" />
-                    <PropertyCard
-                        image={require('../../assets/images/Homes/home3.png')}
-                        title="2 Bedroom Apartment"
-                        price=""
-                        location=""
-                        containerStyle={styles.pickCard}
-                        onPress={() => { }}
-                    />
+                    <SectionHeader title="Top Picks for you" style={{ paddingHorizontal: 20 }} />
+                    {loadingProperties ? (
+                        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
+                    ) : propertiesError ? (
+                        <RetryOverlay message="Couldn't load properties." onRetry={refetchProperties} />
+                    ) : (
+                        properties.length > 0 ? (
+                            <View style={styles.grid}>
+                                {properties.map(property => (
+                                    <PropertyCard
+                                        key={property.id}
+                                        image={property.images?.[0] || require('../../assets/images/Homes/home3.png')}
+                                        title={property.title}
+                                        price={`₦${Number(property.price).toLocaleString()}`}
+                                        location={property.location}
+                                        containerStyle={styles.pickCardGrid}
+                                        onPress={() => router.push(`/property/${property.id}`)}
+                                    />
+                                ))}
+                            </View>
+                        ) : (
+                            <Text style={{ textAlign: 'center', marginTop: 20, color: colors.textSecondary }}>No properties found.</Text>
+                        )
+                    )}
                 </View>
+
+                <FilterModal 
+                    visible={isFilterVisible} 
+                    onClose={() => setIsFilterVisible(false)}
+                    onApply={(filters) => {
+                        console.log('Filters applied:', filters);
+                        setIsFilterVisible(false);
+                    }}
+                />
             </ScrollView>
         </ScreenWrapper>
     );
@@ -104,7 +137,8 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
         borderRadius: 16,
         justifyContent: 'center',
-        alignItems: 'center',
+        alignItems: 'stretch',
+        paddingHorizontal: 6,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
@@ -114,9 +148,9 @@ const styles = StyleSheet.create({
         borderColor: '#F0F0F0',
     },
     gridItemText: {
-        fontSize: 14,
+        fontSize: 13,
         color: '#333',
-        fontWeight: '500',
+        fontWeight: '600',
         textAlign: 'center',
     },
     locationsContainer: {
@@ -151,6 +185,10 @@ const styles = StyleSheet.create({
     locationHomes: {
         fontSize: 12,
         color: '#666',
+    },
+    pickCardGrid: {
+        width: (width - 52) / 2,
+        marginBottom: 16,
     },
     pickCard: {
         marginHorizontal: 20,

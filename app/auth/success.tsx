@@ -24,8 +24,8 @@ const SuccessScreen = () => {
 
                 <View style={styles.footer}>
                     <CustomButton
-                        title="Login"
-                        onPress={() => router.push('/subscription/activate')}
+                        title="Continue"
+                        onPress={() => router.push('/profilesetup/id-verification')}
                     />
                 </View>
             </View>

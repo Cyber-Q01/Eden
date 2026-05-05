@@ -1,59 +1,91 @@
+import { callEdgeFunction } from '../../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     FlatList,
     Image,
+    Keyboard,
     KeyboardAvoidingView,
     Platform,
     SafeAreaView,
     StyleSheet,
     Text,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
 } from 'react-native';
 import ThemedTextInput from '../../components/ThemedTextInput';
 import { useTheme } from '../../context/ThemeContext';
-
-const MOCK_MESSAGES = [
-    { id: '1', text: 'Hey Alex, how is the design coming along?', sender: 'other', time: '10:00 AM' },
-    { id: '2', text: "It's going great! Just finished the chat screens.", sender: 'me', time: '10:02 AM' },
-    { id: '3', text: 'Awesome! Can you show me the Property Gallery?', sender: 'other', time: '10:05 AM' },
-    { id: '4', text: "Sure thing, I'll send it over now.", sender: 'me', time: '10:06 AM' },
-    { id: '5', text: 'Looks very premium. Good job!', sender: 'other', time: '10:10 AM' },
-];
-
-const CHAT_CONTACTS: Record<string, any> = {
-    '1': { name: 'Design team', avatar: require('../../assets/icon/profiles/profile1.png') },
-    '2': { name: 'Daily planning', avatar: require('../../assets/icon/profiles/profile2.png') },
-    '3': { name: 'Kristin Watson', avatar: require('../../assets/icon/profiles/profile3.png') },
-};
+import { useAuth } from '../../context/AuthContext';
+import { useMessages } from '../../hooks/useChat';
+import { supabase } from '../../lib/supabase';
 
 const ChatDetailScreen = () => {
-    const { id } = useLocalSearchParams();
+    const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { colors } = useTheme();
-    const [message, setMessage] = useState('');
+    const { user } = useAuth();
+    const { messages, loading, sendMessage, markRead } = useMessages(id);
+    const [messageText, setMessageText] = useState('');
+    const [contactName, setContactName] = useState('User');
+    const [contactAvatar, setContactAvatar] = useState<string | null>(null);
+    const flatListRef = useRef<FlatList>(null);
 
-    // Fallback if ID is not in contacts
-    const contact = CHAT_CONTACTS[id as string] || {
-        name: 'User',
-        avatar: require('../../assets/icon/profiles/profile1.png')
+    // Fetch the other participant's details
+    useEffect(() => {
+        if (!id || !user) return;
+        
+        const fetchConversation = async () => {
+            try {
+                const data = await callEdgeFunction<any>('conversations', 'GET', null, { id });
+                if (!data) return;
+
+                const isA = data.participant_a_id === user.id;
+                const other = isA ? data.participant_b : data.participant_a;
+                
+                setContactName(other?.first_name ?? 'User');
+                setContactAvatar(other?.user_biodata?.profile_photo || null);
+            } catch (e) {
+                console.error('Error fetching conversation:', e);
+            }
+        };
+
+        fetchConversation();
+        markRead();
+    }, [id, user]);
+
+    // Auto-scroll to bottom on new messages
+    useEffect(() => {
+        if (messages.length > 0) {
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+    }, [messages]);
+
+    const handleSend = async () => {
+        if (!messageText.trim()) return;
+        const text = messageText;
+        setMessageText('');
+        await sendMessage(text);
     };
 
-    const renderMessage = ({ item }: { item: typeof MOCK_MESSAGES[0] }) => {
-        const isMe = item.sender === 'me';
+    const renderMessage = ({ item }: { item: any }) => {
+        const isMe = item.sender_id === user?.id;
         return (
             <View style={[styles.messageWrapper, isMe ? styles.myMessageWrapper : styles.otherMessageWrapper]}>
                 <View style={[
                     styles.messageBubble,
-                    isMe ? [styles.myBubble, { backgroundColor: colors.primary }] : [styles.otherBubble, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]
+                    isMe
+                        ? [styles.myBubble, { backgroundColor: colors.primary }]
+                        : [styles.otherBubble, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]
                 ]}>
                     <Text style={[styles.messageText, isMe ? styles.myMessageText : [styles.otherMessageText, { color: colors.text }]]}>
-                        {item.text}
+                        {item.content}
                     </Text>
                 </View>
-                <Text style={[styles.messageTime, { color: colors.textSecondary }]}>{item.time}</Text>
+                <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
+                    {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
             </View>
         );
     };
@@ -63,12 +95,14 @@ const ChatDetailScreen = () => {
             {/* Header */}
             <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 <View style={styles.headerLeft}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={colors.text} />
-                    </TouchableOpacity>
-                    <Image source={contact.avatar} style={styles.headerAvatar} />
+                    <BackButton />
+                    {contactAvatar ? (
+                        <Image source={{ uri: contactAvatar }} style={styles.headerAvatar} />
+                    ) : (
+                        <Image source={require('../../assets/icon/profiles/profile1.png')} style={styles.headerAvatar} />
+                    )}
                     <View>
-                        <Text style={[styles.headerName, { color: colors.text }]}>{contact.name}</Text>
+                        <Text style={[styles.headerName, { color: colors.text }]}>{contactName}</Text>
                         <Text style={styles.statusText}>Online</Text>
                     </View>
                 </View>
@@ -76,39 +110,59 @@ const ChatDetailScreen = () => {
                     <TouchableOpacity style={styles.headerIcon}>
                         <Ionicons name="call-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={styles.headerIcon}
+                        onPress={() => router.push({
+                            pathname: '/shared-screens/AgreementScreen',
+                            params: { rental_id: 'temp-rental-id' } // Will be wired to real ID later
+                        })}
+                    >
+                        <Ionicons name="document-text-outline" size={22} color={colors.primary} />
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.headerIcon}>
                         <Ionicons name="ellipsis-vertical" size={22} color={colors.text} />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {/* Message List */}
-            <FlatList
-                data={MOCK_MESSAGES}
-                renderItem={renderMessage}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.messageList}
-                showsVerticalScrollIndicator={false}
-            />
-
-            {/* Input Bar */}
+            {/* Keyboard-avoiding wrapper — keeps input above keyboard */}
             <KeyboardAvoidingView
+                style={styles.flex}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
+                {/* Tap messages area to dismiss keyboard */}
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                    <FlatList
+                        ref={flatListRef}
+                        data={messages}
+                        renderItem={renderMessage}
+                        keyExtractor={(item) => item.id}
+                        contentContainerStyle={styles.messageList}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                    />
+                </TouchableWithoutFeedback>
+
+                {/* Input Bar — always sits just above keyboard */}
                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                     <TouchableOpacity style={[styles.attachButton, { backgroundColor: colors.background }]}>
                         <Ionicons name="add" size={24} color={colors.textSecondary} />
                     </TouchableOpacity>
-
                     <ThemedTextInput
                         placeholder="Type a message..."
-                        value={message}
-                        onChangeText={setMessage}
+                        value={messageText}
+                        onChangeText={setMessageText}
                         containerStyle={styles.chatInputContainer}
+                        onSubmitEditing={handleSend}
+                        returnKeyType="send"
                     />
-
-                    <TouchableOpacity style={[styles.sendButton, { backgroundColor: colors.primary }]}>
+                    <TouchableOpacity
+                        style={[styles.sendButton, { backgroundColor: messageText.trim() ? colors.primary : colors.border }]}
+                        onPress={handleSend}
+                        disabled={!messageText.trim()}
+                    >
                         <Ionicons name="send" size={20} color="#FFF" />
                     </TouchableOpacity>
                 </View>
@@ -117,10 +171,13 @@ const ChatDetailScreen = () => {
     );
 };
 
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFF',
+    },
+    flex: {
+        flex: 1,
     },
     header: {
         flexDirection: 'row',

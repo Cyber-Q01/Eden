@@ -1,19 +1,63 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
+import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
+import { supabase } from '../../lib/supabase';
+import { handleError } from '../../lib/errorHandler';
+import { sanitizeEmail, validateEmail, validateRequired, validateAll } from '../../lib/validation';
+import { withTimeout } from '../../lib/timeout';
 
 const LoginScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
+    const { showError } = useToast();
+
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const handleLogin = async () => {
+        const validationError = validateAll([
+            { check: () => validateEmail(email) },
+            { check: () => validateRequired(password, 'Password') },
+        ]);
+        if (validationError) {
+            showError({ type: 'unknown', title: 'Validation Error', message: validationError });
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const { data, error } = await withTimeout(supabase.auth.signInWithPassword({
+                email: sanitizeEmail(email),
+                password,
+            }));
+            if (error) throw error;
+            // Routing is handled automatically by _layout.tsx based on AuthContext state
+        } catch (e: any) {
+            const msg = e?.message?.toLowerCase() ?? '';
+            if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+                showError({ type: 'auth', title: 'Login Failed', message: 'Incorrect email or password. Please try again.' });
+            } else if (msg.includes('email not confirmed')) {
+                showError({ type: 'auth', title: 'Email Not Verified', message: 'Please check your inbox and verify your email before logging in.' });
+            } else {
+                const err = await handleError(e);
+                showError(err);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.topSection}>
                     <Image
                         source={require('../../assets/images/EdenIcon.png')}
@@ -26,31 +70,38 @@ const LoginScreen = () => {
                 <View style={styles.formContainer}>
                     <ThemedTextInput
                         placeholder="Email address"
+                        value={email}
+                        onChangeText={setEmail}
+                        autoCapitalize={'none'}
+                        keyboardType="email-address"
                     />
 
                     <ThemedTextInput
                         placeholder="Password"
-                        secureTextEntry
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPassword}
                         rightIcon={
-                            <TouchableOpacity style={styles.eyeIcon}>
-                                <Ionicons name="eye-outline" size={20} color={colors.textSecondary} />
+                            <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+                                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
                             </TouchableOpacity>
                         }
                     />
 
-                    <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/auth/reset-password')}>
+                    <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/auth/new-password')}>
                         <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>Forgot Password ?</Text>
                     </TouchableOpacity>
 
                     <CustomButton
-                        title="Login"
-                        onPress={() => { }}
+                        title={loading ? "Logging in..." : "Login"}
+                        onPress={handleLogin}
                         style={styles.loginButton}
+                        disabled={loading}
                     />
 
                     <TouchableOpacity onPress={() => router.push('/auth/signup')}>
                         <Text style={[styles.signupPrompt, { color: colors.textSecondary }]}>
-                            Already have an Account ? <Text style={[styles.signupLink, { color: colors.primary }]}>Signup</Text>
+                            Don't have an Account ? <Text style={[styles.signupLink, { color: colors.primary }]}>Signup</Text>
                         </Text>
                     </TouchableOpacity>
                 </View>

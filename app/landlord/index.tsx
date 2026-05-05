@@ -2,48 +2,65 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
+    ActivityIndicator,
     Dimensions,
     Image,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+import PropertyCard from '../../components/PropertyCard';
+import RetryOverlay from '../../components/RetryOverlay';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
+import { useLandlord } from '../../hooks/useLandlord';
+import { useProfile } from '../../hooks/useProfile';
 
 const { width } = Dimensions.get('window');
 
 const LandlordDashboard = () => {
     const router = useRouter();
     const { colors, isDark } = useTheme();
+    const { stats, activeListings, loading, error, refetch } = useLandlord();
+    const { profile } = useProfile();
 
     return (
-        <ScreenWrapper style={styles.container}>
+        <ScreenWrapper withScrollView={true} style={styles.container}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 {/* Header */}
                 <View style={styles.header}>
                     <View>
-                        <Text style={[styles.greeting, { color: colors.primary }]}>Hi, Micheal</Text>
+                        <Text style={[styles.greeting, { color: colors.primary }]}>Hi, {profile?.first_name || 'Landlord'}</Text>
                     </View>
                     <View style={styles.headerRight}>
-                        <TouchableOpacity style={[styles.notificationBtn, { backgroundColor: colors.card }]}>
+                        <TouchableOpacity
+                            style={[styles.notificationBtn, { backgroundColor: colors.card }]}
+                            onPress={() => router.push('/shared-screens/NotificationsScreen')}
+                        >
                             <Ionicons name="notifications-outline" size={24} color={colors.text} />
                         </TouchableOpacity>
-                        <Image
-                            source={require('../../assets/icon/profiles/profile1.png')}
-                            style={styles.profileImage}
-                        />
+                        {profile?.user_biodata?.profile_photo ? (
+                            <Image
+                                source={{ uri: profile.user_biodata.profile_photo }}
+                                style={styles.profileImage}
+                            />
+                        ) : (
+                            <Image
+                                source={require('../../assets/icon/profiles/profile1.png')}
+                                style={styles.profileImage}
+                            />
+                        )}
                     </View>
                 </View>
 
                 {/* Earnings Card */}
                 <View style={[styles.earningsCard, { backgroundColor: colors.card }]}>
                     <Text style={[styles.earningsLabel, { color: colors.textSecondary }]}>Total Earning</Text>
-                    <Text style={[styles.earningsAmount, { color: colors.primary }]}>N540,000</Text>
+                    <Text style={[styles.earningsAmount, { color: colors.primary }]}>{stats.earnings}</Text>
                     <View style={[styles.trendBadge, { backgroundColor: colors.verifiedBadge }]}>
-                        <Text style={[styles.trendText, { color: colors.verifiedText }]}>+15% tt month</Text>
+                        <Text style={[styles.trendText, { color: colors.verifiedText }]}>Active Listings: {stats.activeCount}</Text>
                     </View>
                 </View>
 
@@ -61,18 +78,18 @@ const LandlordDashboard = () => {
                             <Text style={[styles.actionText, { color: colors.text }]}>Add New Listing</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card }]}>
+                        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card }]} onPress={() => router.push('/landlord/listings')}>
                             <View style={styles.actionIconContainer}>
                                 <Ionicons name="eye-outline" size={32} color={colors.primary} />
                             </View>
                             <Text style={[styles.actionText, { color: colors.text }]}>View Active Listings</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card }]}>
+                        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card }]} onPress={() => router.push('/landlord/chat')}>
                             <View style={styles.actionIconContainer}>
                                 <Ionicons name="chatbubble-outline" size={32} color={colors.primary} />
                             </View>
-                            <Text style={[styles.actionText, { color: colors.text }]}>Add New Listing</Text>
+                            <Text style={[styles.actionText, { color: colors.text }]}>Messages</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card }]}>
@@ -86,8 +103,29 @@ const LandlordDashboard = () => {
 
                 {/* Your Active Listing */}
                 <View style={styles.sectionContainer}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Active Listing</Text>
-                    <View style={[styles.listingPlaceholder, { backgroundColor: isDark ? '#333' : '#E0E0E0' }]} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Active Listings</Text>
+                    {loading ? (
+                        <ActivityIndicator size="large" color={colors.primary} />
+                    ) : error ? (
+                        <RetryOverlay message="Couldn't load listings. Tap to retry." onRetry={refetch} />
+                    ) : activeListings.length === 0 ? (
+                        <View style={[styles.listingPlaceholder, { backgroundColor: isDark ? '#333' : '#E0E0E0', justifyContent: 'center', alignItems: 'center' }]}>
+                            <Text style={{ color: colors.textSecondary }}>No listings yet.</Text>
+                        </View>
+                    ) : (
+                        activeListings.map(item => (
+                            <PropertyCard
+                                key={item.id}
+                                image={item.images?.[0] ? { uri: item.images[0] } : require('../../assets/images/Homes/home1.png')}
+                                title={item.title}
+                                price={`₦${item.price}`}
+                                location={item.location}
+                                variant="horizontal"
+                                onPress={() => router.push(`/property/${item.id}`)}
+                                containerStyle={{ marginBottom: 15 }}
+                            />
+                        ))
+                    )}
                 </View>
             </ScrollView>
         </ScreenWrapper>
@@ -96,7 +134,7 @@ const LandlordDashboard = () => {
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: '#F8FAF9',
+        flex: 1,
     },
     scrollContent: {
         paddingHorizontal: 20,
@@ -112,7 +150,6 @@ const styles = StyleSheet.create({
     greeting: {
         fontSize: 24,
         fontWeight: '800',
-        color: '#0047AB',
     },
     headerRight: {
         flexDirection: 'row',
@@ -121,15 +158,14 @@ const styles = StyleSheet.create({
     },
     notificationBtn: {
         padding: 4,
+        borderRadius: 20,
     },
     profileImage: {
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: '#E0E0E0',
     },
     earningsCard: {
-        backgroundColor: '#FFFFFF',
         borderRadius: 24,
         padding: 30,
         alignItems: 'center',
@@ -142,23 +178,19 @@ const styles = StyleSheet.create({
     },
     earningsLabel: {
         fontSize: 16,
-        color: '#999',
         marginBottom: 8,
     },
     earningsAmount: {
         fontSize: 32,
         fontWeight: '800',
-        color: '#0047AB',
         marginBottom: 16,
     },
     trendBadge: {
-        backgroundColor: '#E6F9F0',
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 12,
     },
     trendText: {
-        color: '#00C853',
         fontSize: 14,
         fontWeight: '600',
     },
@@ -168,7 +200,6 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#333',
         textAlign: 'center',
         marginBottom: 20,
     },
@@ -180,7 +211,6 @@ const styles = StyleSheet.create({
     },
     actionCard: {
         width: (width - 56) / 2,
-        backgroundColor: '#FFFFFF',
         borderRadius: 24,
         padding: 24,
         alignItems: 'center',
@@ -196,13 +226,11 @@ const styles = StyleSheet.create({
     actionText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#333',
         textAlign: 'center',
     },
     listingPlaceholder: {
         width: '100%',
         height: 200,
-        backgroundColor: '#E0E0E0',
         borderRadius: 24,
     },
 });

@@ -14,9 +14,7 @@ const ChoosePaymentMethod = () => {
         <ScreenWrapper>
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={colors.text} />
-                    </TouchableOpacity>
+                    <BackButton />
                     <Text style={[styles.headerTitle, { color: colors.text }]}>Choose Payment Method</Text>
                 </View>
                 <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>How would you like to pay for this rent?</Text>

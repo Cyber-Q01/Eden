@@ -11,6 +11,7 @@ import RetryOverlay from '../../components/RetryOverlay';
 import { useTheme } from '../../context/ThemeContext';
 import { useProperties } from '../../hooks/useProperties';
 import { useProfile } from '../../hooks/useProfile';
+import { useNotifications } from '../../hooks/useNotifications';
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +27,7 @@ const HomeScreen = () => {
     const router = useRouter();
     const { properties, loading: propertiesLoading, error: propertiesError, refetch: refetchProperties } = useProperties();
     const { profile, loading: profileLoading } = useProfile();
+    const { unreadCount } = useNotifications();
     const [isFilterVisible, setIsFilterVisible] = useState(false);
     const categories = ['1 Bedroom', 'Duplex', '2 Bedroom', 'Studio', 'Bungalow'];
     
@@ -64,6 +66,7 @@ const HomeScreen = () => {
                             onPress={() => router.push('/shared-screens/NotificationsScreen')}
                         >
                             <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                            {unreadCount > 0 && <View style={[styles.notificationDot, { borderColor: colors.background }]} />}
                         </TouchableOpacity>
                         {profile?.user_biodata?.profile_photo ? (
                             <Image
@@ -216,6 +219,17 @@ const styles = StyleSheet.create({
     },
     iconButton: {
         padding: 4,
+        position: 'relative',
+    },
+    notificationDot: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#ef4444',
+        borderWidth: 2,
     },
     avatar: {
         width: 40,

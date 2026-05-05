@@ -114,8 +114,10 @@ export const useNotifications = () => {
     if (!user) return;
 
     // Subscribe to INSERT events for this user
+    // Append a random string to avoid channel collisions if the hook is used in multiple components simultaneously
+    const channelName = `notifications:${user.id}-${Math.random().toString(36).substring(7)}`;
     const channel = supabase
-      .channel(`notifications:${user.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

@@ -17,6 +17,7 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
 import { useLandlord } from '../../hooks/useLandlord';
 import { useProfile } from '../../hooks/useProfile';
+import { useNotifications } from '../../hooks/useNotifications';
 
 const { width } = Dimensions.get('window');
 
@@ -25,6 +26,7 @@ const LandlordDashboard = () => {
     const { colors, isDark } = useTheme();
     const { stats, activeListings, loading, error, refetch } = useLandlord();
     const { profile } = useProfile();
+    const { unreadCount } = useNotifications();
 
     return (
         <ScreenWrapper withScrollView={true} style={styles.container}>
@@ -40,6 +42,7 @@ const LandlordDashboard = () => {
                             onPress={() => router.push('/shared-screens/NotificationsScreen')}
                         >
                             <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                            {unreadCount > 0 && <View style={[styles.notificationDot, { borderColor: colors.background }]} />}
                         </TouchableOpacity>
                         {profile?.user_biodata?.profile_photo ? (
                             <Image
@@ -159,6 +162,17 @@ const styles = StyleSheet.create({
     notificationBtn: {
         padding: 4,
         borderRadius: 20,
+        position: 'relative',
+    },
+    notificationDot: {
+        position: 'absolute',
+        top: 2,
+        right: 4,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#ef4444',
+        borderWidth: 2,
     },
     profileImage: {
         width: 44,

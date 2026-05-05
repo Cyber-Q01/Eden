@@ -1,3 +1,4 @@
+import BackButton from '../../components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -91,6 +92,7 @@ const NotificationsScreen = () => {
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={styles.headerLeft}>
+          <BackButton />
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Notifications
           </Text>

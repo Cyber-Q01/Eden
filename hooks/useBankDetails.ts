@@ -32,7 +32,28 @@ export const useBankDetails = () => {
         fetchBankDetails();
     }, [user]);
 
-    const saveBankDetails = async (bank: string, accountNumber: string, accountName: string) => {
+    const fetchBanks = async () => {
+        try {
+            const data = await callEdgeFunction('bank-details?action=list_banks', 'GET');
+            return data.map((b: any) => ({ label: b.name, value: b.code }));
+        } catch (e) {
+            handleError(e);
+            return [];
+        }
+    };
+
+    const resolveAccountName = async (accountNumber: string, bankCode: string) => {
+        try {
+            const data = await callEdgeFunction(`bank-details?action=resolve&account_number=${accountNumber}&bank_code=${bankCode}`, 'GET');
+            return data.account_name;
+        } catch (e) {
+            await handleError(e);
+            // We don't show toast for resolution failures to avoid annoying popups while typing
+            return null;
+        }
+    };
+
+    const saveBankDetails = async (bank: string, accountNumber: string, accountName: string, bankCode?: string) => {
         if (!user) return { error: 'Not authenticated' };
         setSaving(true);
         try {
@@ -40,6 +61,7 @@ export const useBankDetails = () => {
                 bank_name: bank,
                 account_number: accountNumber,
                 account_name: accountName,
+                bank_code: bankCode
             });
             showSuccess('Bank details saved successfully');
             await fetchBankDetails();
@@ -53,5 +75,5 @@ export const useBankDetails = () => {
         }
     };
 
-    return { bankDetails, loading, saving, error, saveBankDetails, refetch: fetchBankDetails };
+    return { bankDetails, loading, saving, error, fetchBanks, resolveAccountName, saveBankDetails, refetch: fetchBankDetails };
 };

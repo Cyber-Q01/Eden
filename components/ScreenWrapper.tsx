@@ -23,43 +23,66 @@ interface ScreenWrapperProps {
     keyboardAware?: boolean;
     /** Set to true on screens that contain a ScrollView to prevent TouchableWithoutFeedback from intercepting scroll gestures */
     withScrollView?: boolean;
+    /** Disable KeyboardAvoidingView for screens like WebView where it might interfere with touches */
+    disableKeyboardAvoidingView?: boolean;
 }
 
-const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ children, style, keyboardAware = true, withScrollView = false }) => {
+const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ 
+    children, 
+    style, 
+    keyboardAware = true, 
+    withScrollView = false,
+    disableKeyboardAvoidingView = false
+}) => {
     const insets = useSafeAreaInsets();
     const segments = useSegments();
     const { colors, isDark } = useTheme();
 
     const isTabScreen = segments[0] === '(tabs)';
 
-    const paddingTop = Platform.OS === 'ios' ? insets.top : StatusBar.currentHeight;
+    // Ensure the status bar height is respected on Android even if safe area insets are zero or tiny
+    const paddingTop = Platform.OS === 'android'
+        ? Math.max(insets.top, StatusBar.currentHeight || 24)
+        : insets.top;
+    const paddingBottom = insets.bottom;
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+            <StatusBar 
+                barStyle={isDark ? 'light-content' : 'dark-content'} 
+                backgroundColor="transparent"
+                translucent={true}
+                hidden={false}
+            />
             <LinearGradient
                 colors={[colors.gradientStart, colors.gradientEnd]}
-                style={[styles.container, { paddingTop }]}
+                style={[styles.container, { paddingTop, paddingBottom }]}
                 start={{ x: 0.5, y: 0 }}
                 end={{ x: 0.5, y: 1 }}
             >
-                <KeyboardAvoidingView
-                    style={styles.container}
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    enabled={keyboardAware}
-                >
-                    {withScrollView ? (
-                        <View style={[styles.content, style]}>
-                            {children}
-                        </View>
-                    ) : (
-                        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                {disableKeyboardAvoidingView ? (
+                    <View style={styles.container}>
+                        {children}
+                    </View>
+                ) : (
+                    <KeyboardAvoidingView
+                        style={styles.container}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        enabled={keyboardAware}
+                    >
+                        {withScrollView ? (
                             <View style={[styles.content, style]}>
                                 {children}
                             </View>
-                        </TouchableWithoutFeedback>
-                    )}
-                </KeyboardAvoidingView>
+                        ) : (
+                            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                                <View style={[styles.content, style]}>
+                                    {children}
+                                </View>
+                            </TouchableWithoutFeedback>
+                        )}
+                    </KeyboardAvoidingView>
+                )}
                 {isTabScreen && <AIAssistantTrigger />}
             </LinearGradient>
         </View>
@@ -72,6 +95,9 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
+        width: '100%',
+        maxWidth: 600,
+        alignSelf: 'center',
     },
 });
 

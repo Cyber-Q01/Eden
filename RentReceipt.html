@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rent Receipt - EdenHome</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #1D4ED8;
+            --text-main: #1E293B;
+            --text-secondary: #64748B;
+            --border-color: #E2E8F0;
+            --background-light: #F8FAFC;
+            --white: #FFFFFF;
+            --success-color: #059669;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background-color: var(--background-light);
+            color: var(--text-main);
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .receipt-container {
+            width: 100%;
+            max-width: 800px;
+            background-color: var(--white);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .receipt-header {
+            background-color: var(--primary-color);
+            padding: 40px;
+            color: var(--white);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-circle {
+            width: 48px;
+            height: 48px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 700;
+            font-size: 24px;
+        }
+
+        .company-name {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .receipt-title-box {
+            text-align: right;
+        }
+
+        .receipt-title {
+            font-size: 32px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .receipt-status {
+            display: inline-block;
+            background-color: var(--success-color);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .receipt-body {
+            padding: 40px;
+        }
+
+        .meta-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--background-light);
+        }
+
+        .meta-item label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .meta-item span {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+
+        .detail-section h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .detail-row label {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .detail-row value {
+            font-size: 14px;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .amount-highlight {
+            background-color: var(--background-light);
+            padding: 24px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .amount-label {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .amount-value {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--primary-color);
+        }
+
+        .signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            margin-top: 60px;
+        }
+
+        .signature-box {
+            text-align: center;
+        }
+
+        .signature-line {
+            border-top: 1px solid var(--text-main);
+            margin-top: 40px;
+            padding-top: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .receipt-footer {
+            padding: 30px 40px;
+            background-color: var(--background-light);
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .footer-note {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .footer-contact {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        @media print {
+            body {
+                background-color: white;
+                padding: 0;
+            }
+
+            .receipt-container {
+                box-shadow: none;
+                border: none;
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="receipt-container">
+        <!-- Header -->
+        <header class="receipt-header">
+            <div class="logo-container">
+                <div class="logo-circle">E</div>
+                <div class="company-name">EdenHome</div>
+            </div>
+            <div class="receipt-title-box">
+                <h1 class="receipt-title">Rent Receipt</h1>
+                <div class="receipt-status">Paid</div>
+            </div>
+        </header>
+
+        <!-- Body -->
+        <main class="receipt-body">
+            <!-- Meta Info -->
+            <div class="meta-info">
+                <div class="meta-item">
+                    <label>Receipt No.</label>
+                    <span>#{{receiptNo}}</span>
+                </div>
+                <div class="meta-item">
+                    <label>Date Issued</label>
+                    <span>{{dateIssued}}</span>
+                </div>
+                <div class="meta-item">
+                    <label>Payment Method</label>
+                    <span>{{paymentMethod}}</span>
+                </div>
+            </div>
+
+            <!-- Parties Grid -->
+            <div class="details-grid">
+                <div class="detail-section">
+                    <h3>Received From</h3>
+                    <div class="detail-row">
+                        <label>Tenant Name</label>
+                        <value>{{tenantName}}</value>
+                    </div>
+                    <div class="detail-row">
+                        <label>Property</label>
+                        <value>{{propertyTitle}}</value>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <h3>Received By</h3>
+                    <div class="detail-row">
+                        <label>Landlord Name</label>
+                        <value>{{landlordName}}</value>
+                    </div>
+                    <div class="detail-row">
+                        <label>Organization</label>
+                        <value>{{organization}}</value>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Amount Section -->
+            <div class="amount-highlight">
+                <div class="amount-label">Total Amount Paid</div>
+                <div class="amount-value">₦{{totalAmount}}</div>
+            </div>
+
+            <!-- Payment Description -->
+            <div class="detail-section">
+                <h3>Payment Description</h3>
+                <div class="detail-row">
+                    <label>Payment For</label>
+                    <value>{{paymentFor}}</value>
+                </div>
+                <div class="detail-row">
+                    <label>Transaction ID</label>
+                    <value>{{transactionId}}</value>
+                </div>
+            </div>
+
+            <!-- Signatures -->
+            <div class="signatures">
+                <div class="signature-box">
+                    <div class="signature-line">Authorized Signatory</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-line">Tenant Acknowledgment</div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="receipt-footer">
+            <p class="footer-note">Thank you for choosing Eden. This is a computer-generated receipt and requires no
+                physical signature.</p>
+            <p class="footer-contact">EdenHome Technologies • support@edenhome.com • www.edenhome.com</p>
+        </footer>
+    </div>
+</body>
+
+</html>

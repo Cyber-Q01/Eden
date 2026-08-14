@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated, Dimensions, Modal, StyleSheet, Text,
-  TouchableOpacity, TouchableWithoutFeedback, View, ActivityIndicator,
+  TouchableOpacity, TouchableWithoutFeedback, View,
 } from 'react-native';
 import WebView from 'react-native-webview';
-import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { usePayment } from '../hooks/usePayment';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -69,7 +70,7 @@ const MembershipPaymentModal = ({ visible, onClose, onVerified }: Props) => {
     const url: string = navState.url ?? '';
 
     // Detect success callback
-    if (url.includes('edenhome://membership/verify') && currentReference) {
+    if (url.includes('Eden://membership/verify') && currentReference) {
       setPaystackUrl(null);
       setVerifying(true);
       const success = await verifyMembership(currentReference);
@@ -82,7 +83,7 @@ const MembershipPaymentModal = ({ visible, onClose, onVerified }: Props) => {
     }
 
     // Detect cancellation
-    if (url.includes('edenhome://membership/cancelled')) {
+    if (url.includes('Eden://membership/cancelled')) {
       setPaystackUrl(null);
     }
   };
@@ -114,6 +115,11 @@ const MembershipPaymentModal = ({ visible, onClose, onVerified }: Props) => {
             <WebView
               source={{ uri: paystackUrl }}
               onNavigationStateChange={handleWebViewNav}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              setSupportMultipleWindows={false}
+              javaScriptCanOpenWindowsAutomatically={true}
+              mixedContentMode="compatibility"
               startInLoadingState
               renderLoading={() => (
                 <View style={styles.webviewLoading}>
@@ -142,7 +148,7 @@ const MembershipPaymentModal = ({ visible, onClose, onVerified }: Props) => {
               Become a Verified Renter
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              One-time ₦2,000 membership — access EdenHome's full platform and never pay an agent again.
+              One-time ₦2,000 membership — access Eden's full platform and never pay an agent again.
             </Text>
 
             {/* Perks */}

@@ -12,7 +12,7 @@ import { withTimeout } from '../../lib/timeout';
 
 const VerificationScreen = () => {
     const router = useRouter();
-    const { email } = useLocalSearchParams();
+    const { email, inviteCode } = useLocalSearchParams<{ email: string; inviteCode?: string }>();
     const { colors } = useTheme();
     const { showError, showSuccess } = useToast();
 
@@ -21,6 +21,20 @@ const VerificationScreen = () => {
     const inputRefs = useRef<Array<TextInput | null>>([]);
 
     const handleInputChange = (text: string, index: number) => {
+        // Handle Paste (multiple characters)
+        if (text.length > 1) {
+            const pastedData = text.slice(0, 6).split('');
+            const newOtp = [...otp];
+            pastedData.forEach((char, i) => {
+                if (index + i < 6) newOtp[index + i] = char;
+            });
+            setOtp(newOtp);
+            // Focus last filled or last input
+            const lastIndex = Math.min(index + pastedData.length - 1, 5);
+            inputRefs.current[lastIndex]?.focus();
+            return;
+        }
+
         const newOtp = [...otp];
         newOtp[index] = text;
         setOtp(newOtp);
@@ -28,6 +42,16 @@ const VerificationScreen = () => {
         // Move to next input if there's text
         if (text && index < 5 && inputRefs.current[index + 1]) {
             inputRefs.current[index + 1]?.focus();
+        }
+        // Move to previous input if text was deleted (Backspace behavior)
+        else if (!text && index > 0 && inputRefs.current[index - 1]) {
+            inputRefs.current[index - 1]?.focus();
+        }
+    };
+
+    const handleKeyPress = (e: any, index: number) => {
+        if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
+            inputRefs.current[index - 1]?.focus();
         }
     };
 
@@ -40,13 +64,23 @@ const VerificationScreen = () => {
 
         setLoading(true);
         try {
-            const { error } = await withTimeout(supabase.auth.verifyOtp({
+            const { data, error } = await withTimeout(supabase.auth.verifyOtp({
                 email: email as string,
                 token,
                 type: 'signup'
             }));
             if (error) throw error;
-            router.push('/auth/success');
+            
+            const isAgent = data?.user?.user_metadata?.role === 'AGENT';
+
+            if (isAgent || inviteCode) {
+                router.push({
+                    pathname: '/auth/accept-invite',
+                    params: inviteCode ? { inviteCode } : undefined
+                });
+            } else {
+                router.push('/auth/success');
+            }
         } catch (e) {
             const err = await handleError(e);
             showError(err);
@@ -88,10 +122,12 @@ const VerificationScreen = () => {
                             containerStyle={styles.codeInputContainer}
                             style={styles.codeInput}
                             keyboardType="number-pad"
-                            maxLength={1}
+                            maxLength={index === 0 ? 6 : 1} // Allow paste into first box
                             value={digit}
                             onChangeText={(text) => handleInputChange(text, index)}
+                            onKeyPress={(e) => handleKeyPress(e, index)}
                             ref={(el: any) => inputRefs.current[index] = el}
+                            selectTextOnFocus={true}
                         />
                     ))}
                 </View>
@@ -121,12 +157,12 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        paddingVertical: 80,
-        justifyContent: 'space-between',
+        paddingTop: 80,
     },
     topSection: {
         alignItems: 'center',
         gap: 16,
+        marginBottom: 40,
     },
     title: {
         fontSize: 28,
@@ -146,24 +182,27 @@ const styles = StyleSheet.create({
     },
     codeContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         width: '100%',
-        paddingHorizontal: 10,
+        gap: 10,
     },
     codeInputContainer: {
-        width: 50,
-        height: 50,
+        width: 48,
+        height: 56,
         paddingHorizontal: 0,
         justifyContent: 'center',
+        borderRadius: 12,
     },
     codeInput: {
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: '700',
         textAlign: 'center',
+        width: '100%',
     },
     footer: {
         gap: 24,
         alignItems: 'center',
+        marginTop: 48,
     },
     verifyButton: {
         width: '100%',

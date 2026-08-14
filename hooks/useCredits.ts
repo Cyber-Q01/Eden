@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { callEdgeFunction } from '../lib/api';
 import { handleError } from '../lib/errorHandler';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type UnlockResult = {
   unlocked: boolean;
@@ -16,22 +17,28 @@ export type UnlockResult = {
 export const useCredits = () => {
   const { user } = useAuth();
   const { showError, showSuccess } = useToast();
-  const [credits, setCredits] = useState<number>(0);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const { data: credits, isLoading: queryLoading, refetch } = useQuery({
+    queryKey: ['credits', user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+      try {
+        const data = await callEdgeFunction<{ balance: number }>('credits', 'GET');
+        return data?.balance ?? 0;
+      } catch (e) {
+        const err = await handleError(e);
+        console.warn('Failed to fetch credits:', err);
+        throw e;
+      }
+    },
+    enabled: !!user
+  });
 
   const fetchCredits = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const data = await callEdgeFunction<{ balance: number }>('credits', 'GET');
-      setCredits(data?.balance ?? 0);
-    } catch (e) {
-      const err = await handleError(e);
-      // Silently fail — don't show error for credit fetching
-      console.warn('Failed to fetch credits:', err);
-    } finally {
-      setLoading(false);
-    }
+    const res = await refetch();
+    return res.data ?? 0;
   };
 
   const checkUnlocked = async (propertyId: string): Promise<boolean> => {
@@ -40,7 +47,10 @@ export const useCredits = () => {
       const data = await callEdgeFunction<{ balance: number; unlocked: boolean }>(
         'credits', 'GET', null, { property_id: propertyId }
       );
-      setCredits(data?.balance ?? 0);
+      // Optimistically update credits balance if changed
+      if (data?.balance !== undefined) {
+        queryClient.setQueryData(['credits', user.id], data.balance);
+      }
       return data?.unlocked ?? false;
     } catch {
       return false;
@@ -56,7 +66,7 @@ export const useCredits = () => {
     reference: string;
   } | null> => {
     if (!user) return null;
-    setLoading(true);
+    setActionLoading(true);
     try {
       const data = await callEdgeFunction(
         'initialize-credit-topup', 'POST',
@@ -68,17 +78,19 @@ export const useCredits = () => {
       showError(err);
       return null;
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   const verifyTopUp = async (reference: string): Promise<boolean> => {
-    setLoading(true);
+    setActionLoading(true);
     try {
       const data = await callEdgeFunction<{ balance: number; unlocks_added: number }>(
         'verify-credit-topup', 'POST', { reference }
       );
-      setCredits(data?.balance ?? 0);
+      if (data?.balance !== undefined) {
+        queryClient.setQueryData(['credits', user?.id], data.balance);
+      }
       if (data?.unlocks_added && data.unlocks_added > 0) {
         showSuccess(`${data.unlocks_added} credits added! 🎉`);
       }
@@ -88,25 +100,25 @@ export const useCredits = () => {
       showError(err);
       return false;
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   const unlockProperty = async (propertyId: string): Promise<UnlockResult> => {
     if (!user) return { unlocked: false, balance: 0, error: 'not_authenticated' };
-    setLoading(true);
+    setActionLoading(true);
     try {
       const data = await callEdgeFunction<UnlockResult>(
         'unlock-property', 'POST', { property_id: propertyId }
       );
 
       if (data?.error === 'insufficient_credits') {
-        setCredits(data.balance);
+        if (data.balance !== undefined) queryClient.setQueryData(['credits', user.id], data.balance);
         return data;
       }
 
       if (data?.unlocked) {
-        setCredits(data.balance);
+        if (data.balance !== undefined) queryClient.setQueryData(['credits', user.id], data.balance);
         if (data.charged) {
           showSuccess('Property unlocked! 🔓');
         }
@@ -119,19 +131,19 @@ export const useCredits = () => {
       showError(err);
       return { unlocked: false, balance: 0, error: 'network_error' };
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      fetchCredits();
-    }, [user])
+      refetch();
+    }, [user, refetch])
   );
 
   return {
-    credits,
-    loading,
+    credits: credits ?? 0,
+    loading: queryLoading || actionLoading,
     fetchCredits,
     checkUnlocked,
     initializeTopUp,

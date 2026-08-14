@@ -1,11 +1,11 @@
+import * as ImagePicker from 'expo-image-picker';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import ThemedTextInput from '../ThemedTextInput';
+import { ID_TYPE_OPTIONS } from '../../constants/biodataOptions';
 import { useTheme } from '../../context/ThemeContext';
 import { BiodataForm, ModalKeys } from '../../types/biodata';
-import { ID_TYPE_OPTIONS } from '../../constants/biodataOptions';
+import ThemedTextInput from '../ThemedTextInput';
 import { DropdownButton, FieldLabel, PhotoUploadBox, SectionTitle } from './BiodataFormElements';
-import * as ImagePicker from 'expo-image-picker';
 
 type Props = {
     form: BiodataForm;
@@ -44,6 +44,7 @@ const IdentityStep = ({ form, updateForm, openModal }: Props) => {
                     placeholder="Enter your ID number"
                     value={form.id_number}
                     onChangeText={t => updateForm('id_number', t)}
+                    keyboardType='name-phone-pad'
                 />
             </View>
 

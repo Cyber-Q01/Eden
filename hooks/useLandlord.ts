@@ -7,6 +7,7 @@ import { callEdgeFunction } from '../lib/api';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { decode } from 'base64-arraybuffer';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const withTimeout = <T>(promise: Promise<T> | PromiseLike<T>, ms: number = 60000): Promise<T> => {
     return Promise.race([
@@ -16,41 +17,53 @@ const withTimeout = <T>(promise: Promise<T> | PromiseLike<T>, ms: number = 60000
 };
 
 export const useLandlord = () => {
-    const { user } = useAuth();
+    const { user, role } = useAuth();
     const { showError, showSuccess } = useToast();
-    const [stats, setStats] = useState({ earnings: 'N0', activeCount: 0 });
-    const [activeListings, setActiveListings] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+    const queryClient = useQueryClient();
 
-    const fetchDashboardData = async () => {
-        if (!user) return;
-        setLoading(true);
-        setError(false);
-        try {
-            const data = await callEdgeFunction<{ listings: any[]; stats: { earnings: string; activeCount: number } }>(
-                'landlord-properties', 'GET'
-            );
-            setActiveListings(data.listings ?? []);
-            setStats(data.stats ?? { earnings: 'N0', activeCount: 0 });
-        } catch (e) {
-            setError(true);
-            const err = await handleError(e);
-            showError(err);
-        } finally {
-            setLoading(false);
-        }
+    const { data, isLoading: loading, isError: error, refetch: fetchDashboardData } = useQuery({
+        queryKey: ['landlord-dashboard', user?.id],
+        queryFn: async () => {
+            if (!user) return null;
+            try {
+                const response = await callEdgeFunction<{ 
+                    listings: any[]; 
+                    stats: { 
+                        earnings: string; 
+                        activeCount: number;
+                        tenantCount: number;
+                        pendingRequests: number;
+                        bookingCount?: number;
+                        monthlyEarnings: number[];
+                    };
+                    applications?: any[];
+                }>('landlord-properties', 'GET');
+                return response;
+            } catch (e) {
+                const err = await handleError(e);
+                showError(err);
+                throw e;
+            }
+        },
+        enabled: !!user
+    });
+
+    const stats = data?.stats ?? { 
+        earnings: '₦0', 
+        activeCount: 0, 
+        tenantCount: 0, 
+        pendingRequests: 0, 
+        bookingCount: 0,
+        monthlyEarnings: Array(12).fill(0) 
     };
+    const activeListings = data?.listings ?? [];
+    const applications = data?.applications ?? [];
 
-    useEffect(() => {
-        fetchDashboardData();
-    }, [user]);
-
-    const addProperty = async (propertyData: any, imageUris: string[]) => {
+    const addProperty = async (propertyData: any, imageUris: string[], videoUri?: string) => {
         if (!user) return { error: 'Not authorized' };
 
         try {
-            console.log('[addProperty] Starting process with', imageUris.length, 'images');
+            console.log('[addProperty] Starting process with', imageUris.length, 'images and', videoUri ? 'a video' : 'no video');
 
             // 1. Compress & upload images to Supabase Storage (stays client-side)
             const uploadedUrls = [];
@@ -93,15 +106,58 @@ export const useLandlord = () => {
             }
 
             // 2. Insert property via Edge Function
-            console.log('[addProperty] All images uploaded. Calling add-property edge function...');
-            await callEdgeFunction('add-property', 'POST', {
+            console.log('[addProperty] Images uploaded. Calling add-property edge function...');
+            const response = await callEdgeFunction('add-property', 'POST', {
                 ...propertyData,
                 images: uploadedUrls,
+                video_url: null, // Will be updated via background upload
             });
+
+            // 3. Dispatch background video upload if videoUri exists
+            if (videoUri) {
+                console.log(`[addProperty] Dispatching background video upload...`);
+                // We do NOT await this promise, allowing it to run in the background
+                (async () => {
+                    try {
+                        const base64 = await FileSystem.readAsStringAsync(videoUri, { encoding: FileSystem.EncodingType.Base64 });
+                        const ext = videoUri.split('.').pop() || 'mp4';
+                        const fileName = `${user.id}-${Date.now()}-${Math.random()}.${ext}`;
+                        const arrayBuffer = decode(base64);
+
+                        const { data, error: uploadError } = await supabase.storage
+                            .from('property-videos')
+                            .upload(fileName, arrayBuffer, {
+                                contentType: `video/${ext}`,
+                                upsert: false
+                            });
+
+                        if (uploadError) {
+                            console.error('[Background Video Upload] Error:', uploadError);
+                            return;
+                        }
+
+                        if (data && response?.id) {
+                            const { data: publicUrlData } = supabase.storage
+                                .from('property-videos')
+                                .getPublicUrl(data.path);
+                            
+                            // Update the property with the video URL
+                            await supabase
+                                .from('properties')
+                                .update({ video_url: publicUrlData.publicUrl })
+                                .eq('id', response.id);
+                                
+                            console.log('[Background Video Upload] Success. Property updated.');
+                        }
+                    } catch (err) {
+                        console.error('[Background Video Upload] Exception:', err);
+                    }
+                })();
+            }
 
             console.log('[addProperty] Property listed successfully!');
             showSuccess('Property listed successfully');
-            fetchDashboardData();
+            queryClient.invalidateQueries({ queryKey: ['landlord-dashboard'] });
             return { error: null };
         } catch (e: any) {
             console.error('[addProperty] Exception caught:', e);
@@ -111,5 +167,141 @@ export const useLandlord = () => {
         }
     };
 
-    return { stats, activeListings, loading, error, addProperty, refetch: fetchDashboardData };
+    const updateProperty = async (propertyId: string, propertyData: any, imageUris: string[], videoUri?: string) => {
+        if (!user) return { error: 'Not authorized' };
+
+        try {
+            console.log('[updateProperty] Starting update for', propertyId);
+
+            // Separate existing remote URLs from new local URIs
+            const existingUrls = imageUris.filter(uri => uri.startsWith('http'));
+            const newLocalUris = imageUris.filter(uri => !uri.startsWith('http'));
+
+            const uploadedUrls = [...existingUrls];
+
+            // 1. Upload new images if any
+            for (let i = 0; i < newLocalUris.length; i++) {
+                const uri = newLocalUris[i];
+                const manipulatedImage = await ImageManipulator.manipulateAsync(
+                    uri,
+                    [{ resize: { width: 1080 } }],
+                    { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+                );
+
+                const base64 = await FileSystem.readAsStringAsync(manipulatedImage.uri, { encoding: FileSystem.EncodingType.Base64 });
+                const ext = 'jpg';
+                const fileName = `${user.id}-${Date.now()}-${Math.random()}.${ext}`;
+                const arrayBuffer = decode(base64);
+
+                const { data, error: uploadError } = await withTimeout<any>(supabase.storage
+                    .from('property-images')
+                    .upload(fileName, arrayBuffer, {
+                        contentType: `image/${ext}`,
+                        upsert: false
+                    }));
+
+                if (uploadError) throw uploadError;
+
+                const { data: publicUrlData } = supabase.storage
+                    .from('property-images')
+                    .getPublicUrl(data.path);
+
+                uploadedUrls.push(publicUrlData.publicUrl);
+            }
+
+            let finalVideoUrl = undefined;
+            if (videoUri && videoUri.startsWith('http')) {
+                finalVideoUrl = videoUri;
+            }
+
+            // 2. Update property via Edge Function
+            await callEdgeFunction('add-property', 'PUT', {
+                ...propertyData,
+                id: propertyId,
+                images: uploadedUrls,
+                ...(finalVideoUrl !== undefined && { video_url: finalVideoUrl }),
+                ...(videoUri === null && { video_url: null }),
+            });
+
+            // 3. Dispatch background video upload if new videoUri
+            if (videoUri && !videoUri.startsWith('http')) {
+                console.log(`[updateProperty] Dispatching background video upload...`);
+                (async () => {
+                    try {
+                        const base64 = await FileSystem.readAsStringAsync(videoUri, { encoding: FileSystem.EncodingType.Base64 });
+                        const ext = videoUri.split('.').pop() || 'mp4';
+                        const fileName = `${user.id}-${Date.now()}-${Math.random()}.${ext}`;
+                        const arrayBuffer = decode(base64);
+
+                        const { data, error: uploadError } = await supabase.storage
+                            .from('property-videos')
+                            .upload(fileName, arrayBuffer, {
+                                contentType: `video/${ext}`,
+                                upsert: false
+                            });
+
+                        if (uploadError) {
+                            console.error('[Background Video Upload] Error:', uploadError);
+                            return;
+                        }
+
+                        if (data) {
+                            const { data: publicUrlData } = supabase.storage
+                                .from('property-videos')
+                                .getPublicUrl(data.path);
+                            
+                            await supabase
+                                .from('properties')
+                                .update({ video_url: publicUrlData.publicUrl })
+                                .eq('id', propertyId);
+                                
+                            console.log('[Background Video Upload] Success. Property updated.');
+                        }
+                    } catch (err) {
+                        console.error('[Background Video Upload] Exception:', err);
+                    }
+                })();
+            }
+
+            showSuccess('Property updated successfully');
+            queryClient.invalidateQueries({ queryKey: ['landlord-dashboard'] });
+            return { error: null };
+        } catch (e: any) {
+            const err = await handleError(e);
+            showError(err);
+            return { error: err.message };
+        }
+    };
+
+    const deleteProperty = async (propertyId: string) => {
+        console.log('[deleteProperty] Called with propertyId:', propertyId);
+        console.log('[deleteProperty] Current user:', user?.id, '| role:', role);
+
+        if (!user) {
+            console.warn('[deleteProperty] No user found, aborting.');
+            return;
+        }
+
+        if (role === 'AGENT') {
+            console.warn('[deleteProperty] Agent tried to delete — blocked.');
+            showError({ type: 'error', title: 'Action Prohibited', message: 'Agents are not allowed to delete property listings.' });
+            return;
+        }
+        
+        try {
+            console.log('[deleteProperty] Calling edge function landlord-properties DELETE...');
+            const result = await callEdgeFunction('landlord-properties', 'DELETE', { property_id: propertyId });
+            console.log('[deleteProperty] Edge function response:', JSON.stringify(result));
+
+            showSuccess('Property deleted successfully');
+            queryClient.invalidateQueries({ queryKey: ['landlord-dashboard'] });
+            console.log('[deleteProperty] Query cache invalidated.');
+        } catch (e: any) {
+            console.error('[deleteProperty] Exception caught:', e?.message ?? e);
+            const err = await handleError(e);
+            showError(err);
+        }
+    };
+
+    return { stats, activeListings, applications, loading, error, addProperty, updateProperty, deleteProperty, refetch: fetchDashboardData };
 };

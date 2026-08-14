@@ -1,6 +1,9 @@
+import { useNotifications } from '@/hooks/useNotifications';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -8,6 +11,7 @@ import {
     Linking,
     Modal,
     ScrollView,
+    StatusBar,
     StyleSheet,
     Switch,
     Text,
@@ -15,9 +19,12 @@ import {
     View,
 } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import { useToast } from '../../components/Toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useProfile } from '../../hooks/useProfile';
+import { useLandlord } from '../../hooks/useLandlord';
+import { callEdgeFunction } from '../../lib/api';
 
 // ─── Small reusable pieces ────────────────────────────────────────────────────
 
@@ -29,29 +36,49 @@ type MenuRowProps = {
     danger?: boolean;
     badge?: string;
     badgeColor?: string;
+    loading?: boolean;
+    showChevron?: boolean;
+    hasSwitch?: boolean;
+    switchValue?: boolean;
+    onSwitchChange?: (value: boolean) => void;
 };
 
-const MenuRow = ({ icon, label, onPress, value, danger, badge, badgeColor }: MenuRowProps) => {
+const MenuRow = ({ icon, label, onPress, value, danger, badge, badgeColor, loading, showChevron = true, hasSwitch, switchValue, onSwitchChange }: MenuRowProps) => {
     const { colors } = useTheme();
     return (
         <TouchableOpacity
-            style={[styles.menuRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={onPress}
-            activeOpacity={0.7}
+            style={[styles.menuRow, { backgroundColor: colors.card }]}
+            onPress={hasSwitch ? undefined : onPress}
+            activeOpacity={hasSwitch ? 1 : 0.7}
+            disabled={loading}
         >
-            <View style={[styles.menuIconWrap, { backgroundColor: danger ? '#FFEDED' : colors.primary + '15' }]}>
-                <Ionicons name={icon as any} size={18} color={danger ? '#FF4D4D' : colors.primary} />
+            <View style={[styles.menuIconWrap, { backgroundColor: danger ? '#FEF2F2' : '#407BFF15' }]}>
+                {loading ? (
+                    <ActivityIndicator size="small" color="#407BFF" />
+                ) : (
+                    <Ionicons name={icon as any} size={20} color={danger ? '#EF4444' : '#407BFF'} />
+                )}
             </View>
             <View style={styles.menuRowContent}>
-                <Text style={[styles.menuRowLabel, { color: danger ? '#FF4D4D' : colors.text }]}>{label}</Text>
-                {value ? <Text style={[styles.menuRowValue, { color: colors.textSecondary }]}>{value}</Text> : null}
+                <Text style={[styles.menuRowLabel, { color: danger ? '#EF4444' : colors.text }]}>{label}</Text>
             </View>
-            {badge ? (
-                <View style={[styles.menuBadge, { backgroundColor: badgeColor || colors.primary }]}>
-                    <Text style={styles.menuBadgeText}>{badge}</Text>
-                </View>
+            {value ? <Text style={[styles.menuRowValue, { color: colors.textSecondary }]}>{value}</Text> : null}
+            {hasSwitch ? (
+                <Switch
+                    value={switchValue}
+                    onValueChange={onSwitchChange}
+                    trackColor={{ false: '#E5E7EB', true: '#1D4ED8' }}
+                    thumbColor="#FFF"
+                />
             ) : (
-                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                <>
+                    {badge && (
+                        <View style={[styles.menuBadge, { backgroundColor: badgeColor || colors.primary }]}>
+                            <Text style={styles.menuBadgeText}>{badge}</Text>
+                        </View>
+                    )}
+                    {showChevron && !badge && <Ionicons name="chevron-forward" size={16} color="#94A3B8" />}
+                </>
             )}
         </TouchableOpacity>
     );
@@ -62,8 +89,10 @@ const Section = ({ title, children }: SectionProps) => {
     const { colors } = useTheme();
     return (
         <View style={styles.section}>
-            <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{title}</Text>
-            <View style={styles.sectionGroup}>{children}</View>
+            <Text style={styles.sectionHeader}>{title}</Text>
+            <View style={[styles.sectionGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {children}
+            </View>
         </View>
     );
 };
@@ -72,206 +101,307 @@ const Section = ({ title, children }: SectionProps) => {
 
 const LandlordProfileScreen = () => {
     const router = useRouter();
+    const { user, role } = useAuth();
     const { colors, isDark, toggleTheme } = useTheme();
-    const { role } = useAuth();
+    const { showSuccess, showError } = useToast();
+    const [loadingPush, setLoadingPush] = useState(false);
+    const { profile, loading, signOut } = useProfile();
+    const { stats } = useLandlord();
+    const { registerForPushNotificationsAsync } = useNotifications();
     const [pushEnabled, setPushEnabled] = useState(true);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
-    const { profile, loading, signOut } = useProfile();
+
+    useEffect(() => {
+        if (profile) {
+            setPushEnabled(profile.push_notifications_enabled ?? true);
+        }
+    }, [profile]);
+
+    const handleTogglePush = async (value: boolean) => {
+        setPushEnabled(value);
+        if (!user) return;
+
+        try {
+            const { error } = await supabase
+                .from('users')
+                .update({
+                    push_notifications_enabled: value,
+                    push_token: value ? undefined : null
+                })
+                .eq('id', user.id);
+
+            if (error) throw error;
+            if (value) await registerForPushNotificationsAsync();
+            showSuccess(value ? 'Notifications enabled' : 'Notifications disabled');
+        } catch (error: any) {
+            setPushEnabled(!value);
+            showError({
+                type: 'unknown',
+                title: 'Settings Error',
+                message: 'Failed to update notification settings.'
+            });
+        }
+    };
+
+    const handleTestPush = async () => {
+        if (!user) return;
+        if (!pushEnabled) {
+            Alert.alert('Notifications Disabled', 'Please enable push notifications in settings.');
+            return;
+        }
+
+        setLoadingPush(true);
+        try {
+            await callEdgeFunction('send-push-notification', 'POST', {
+                user_id: user.id,
+                title: '🏢 Landlord Test',
+                body: 'Your Eden landlord notification system is online!',
+                image: 'https://img.freepik.com/free-vector/home-logo-template_23-2148005537.jpg'
+            });
+            showSuccess('Test notification sent!');
+        } catch (error: any) {
+            showError({
+                type: 'unknown',
+                title: 'Push Error',
+                message: error.message
+            });
+        } finally {
+            setLoadingPush(false);
+        }
+    };
 
     const handleSignOut = async () => {
         setShowSignOutModal(false);
         await signOut();
     };
 
-    const verificationStatus = profile?.is_verified ? 'Verified' : 'Pending';
-    const verificationColor = profile?.is_verified ? '#22C55E' : colors.textSecondary;
-
     return (
-        <ScreenWrapper withScrollView={true}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+
             <ScrollView
-                contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.scrollContent}
             >
-                <Text style={[styles.title, { color: colors.text }]}>Landlord Profile</Text>
-
-                {/* ── Profile Card ── */}
-                {loading ? (
-                    <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 32 }} />
-                ) : (
-                    <TouchableOpacity
-                        style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        onPress={() => router.push('/profile/edit-profile')}
-                        activeOpacity={0.85}
+                {/* ── Header Section ── */}
+                <View style={styles.headerContainer}>
+                    <LinearGradient
+                        colors={['#1D4ED8', '#1E3A8A']}
+                        style={styles.headerGradient}
                     >
-                        <View style={styles.avatarWrap}>
-                            <Image
-                                source={
-                                    profile?.user_biodata?.profile_photo
-                                        ? { uri: profile.user_biodata.profile_photo }
-                                        : require('../../assets/icon/profiles/profile1.png')
-                                }
-                                style={styles.avatar}
-                            />
-                            {profile?.is_verified && (
-                                <View style={[styles.verifiedDot, { backgroundColor: '#22C55E' }]}>
-                                    <Ionicons name="checkmark" size={10} color="#fff" />
-                                </View>
-                            )}
-                        </View>
-                        <View style={styles.profileInfo}>
-                            <Text style={[styles.name, { color: colors.text }]}>
-                                {profile?.first_name || 'Your'} {profile?.last_name || 'Name'}
+                        {/* Decorative Circles */}
+                        <View style={[styles.decorCircle, { width: 200, height: 200, right: -60, top: -40 }]} />
+                        <View style={[styles.decorCircle, { width: 120, height: 120, left: -20, top: 100 }]} />
+
+                        <View style={styles.profileHeaderContent}>
+                            <View style={styles.avatarContainer}>
+                                <Image
+                                    source={
+                                        profile?.user_biodata?.profile_photo
+                                            ? { uri: profile.user_biodata.profile_photo }
+                                            : { uri: 'https://i.pravatar.cc/200' }
+                                    }
+                                    style={styles.avatar}
+                                />
+                                <TouchableOpacity
+                                    style={styles.editAvatarBtn}
+                                    onPress={() => router.push('/profile/edit-profile')}
+                                >
+                                    <Ionicons name="camera" size={14} color="#FFF" />
+                                </TouchableOpacity>
+                            </View>
+
+                            <Text style={styles.userName}>
+                                {profile?.first_name || (role === 'AGENT' ? 'Agent' : 'Landlord')} {profile?.last_name || ''}
                             </Text>
-                            <Text style={[styles.email, { color: colors.textSecondary }]}>{profile?.email || ''}</Text>
-                            {profile?.phone && (
-                                <Text style={[styles.phone, { color: colors.textSecondary }]}>{profile.phone}</Text>
-                            )}
-                            {/* <View style={[styles.roleBadge, { backgroundColor: colors.primary + '20' }]}>
-                                <Text style={[styles.roleBadgeText, { color: colors.primary }]}>🏠 Landlord</Text>
-                            </View> */}
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
 
-                {/* ── LANDLORD sections ── */}
-                <Section title="My Properties">
-                    <MenuRow
-                        icon="business-outline"
-                        label="Manage Properties"
-                        onPress={() => router.push('/landlord')}
-                    />
-                    <MenuRow
-                        icon="add-circle-outline"
-                        label="Add New Property"
-                        onPress={() => router.push('/landlord-screens/add-property')}
-                    />
-                    <MenuRow
-                        icon="people-outline"
-                        label="Tenant Requests"
-                        onPress={() => router.push('/shared-screens/ApplicationsScreen')}
-                    />
-                </Section>
-
-                <Section title="Payouts">
-                    <MenuRow
-                        icon="cash-outline"
-                        label="Payout History"
-                        onPress={() => Alert.alert('Coming Soon', 'Payout history is coming soon.')}
-                    />
-                    <MenuRow
-                        icon="card-outline"
-                        label="Bank Account"
-                        value={profile?.bank_name || 'Not set'}
-                        onPress={() => router.push('/profile/edit-profile')}
-                    />
-                </Section>
-
-                {/* ── Verification ── */}
-                <Section title="Verification">
-                    <MenuRow
-                        icon="shield-checkmark-outline"
-                        label="KYC Verification"
-                        value={verificationStatus}
-                        badge={verificationStatus}
-                        badgeColor={verificationColor}
-                        onPress={() => router.push('/profilesetup/id-verification')}
-                    />
-                </Section>
-
-                {/* ── Account Settings ── */}
-                <Section title="Account">
-                    <MenuRow
-                        icon="person-outline"
-                        label="Edit Profile"
-                        onPress={() => router.push('/profile/edit-profile')}
-                    />
-                    <MenuRow
-                        icon="lock-closed-outline"
-                        label="Change Password"
-                        onPress={() => Alert.alert('Coming Soon', 'Password change is coming soon.')}
-                    />
-                </Section>
-
-                {/* ── Preferences ── */}
-                <Section title="Preferences">
-                    <View style={[styles.switchRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={styles.switchLeft}>
-                            <View style={[styles.menuIconWrap, { backgroundColor: colors.primary + '15' }]}>
-                                <Ionicons name="moon-outline" size={18} color={colors.primary} />
+                            <View style={styles.verifiedRow}>
+                                <View style={styles.verifiedBadge}>
+                                    <Ionicons name="shield-checkmark" size={14} color="#BFDBFE" />
+                                    <Text style={styles.verifiedText}>{role === 'AGENT' ? 'Delegated Agent' : 'Verified Landlord'}</Text>
+                                </View>
                             </View>
-                            <Text style={[styles.menuRowLabel, { color: colors.text }]}>Dark Mode</Text>
                         </View>
-                        <Switch
-                            value={isDark}
-                            onValueChange={toggleTheme}
-                            trackColor={{ false: '#767577', true: colors.primary }}
-                            thumbColor="#FFF"
-                        />
-                    </View>
-                    <View style={[styles.switchRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={styles.switchLeft}>
-                            <View style={[styles.menuIconWrap, { backgroundColor: colors.primary + '15' }]}>
-                                <Ionicons name="notifications-outline" size={18} color={colors.primary} />
+                    </LinearGradient>
+
+                    {/* Stats Card */}
+                    {(role === 'LANDLORD' || role === 'AGENT') && (
+                        <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+                            <View style={styles.statItem}>
+                                <Text style={[styles.statValue, { color: colors.text }]}>{stats.activeCount}</Text>
+                                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Properties</Text>
                             </View>
-                            <Text style={[styles.menuRowLabel, { color: colors.text }]}>Push Notifications</Text>
+                            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+                            <View style={styles.statItem}>
+                                <Text style={[styles.statValue, { color: colors.text }]}>{stats.tenantCount}</Text>
+                                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Active Tenants</Text>
+                            </View>
+                            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+                            <View style={styles.statItem}>
+                                <Text style={[styles.statValue, { color: colors.text }]}>4.8</Text>
+                                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Avg Rating</Text>
+                            </View>
                         </View>
-                        <Switch
-                            value={pushEnabled}
-                            onValueChange={setPushEnabled}
-                            trackColor={{ false: '#767577', true: colors.primary }}
-                            thumbColor="#FFF"
+                    )}
+                </View>
+
+                <View style={styles.menuContainer}>
+                    <Section title={role === 'AGENT' ? "MANAGEMENT" : "MY BUSINESS"}>
+                        <MenuRow
+                            icon="business-outline"
+                            label={role === 'AGENT' ? "Assigned Listings" : "My Listings"}
+                            value={`${stats.activeCount} Active`}
+                            onPress={() => router.push('/landlord')}
                         />
-                    </View>
-                </Section>
+                        <MenuRow
+                            icon="mail-outline"
+                            label="Rent Requests"
+                            onPress={() => router.push('/shared-screens/ApplicationsScreen')}
+                        />
+                        <MenuRow
+                            icon="stats-chart-outline"
+                            label="Rent Tracker"
+                            onPress={() => router.push('/landlord-screens/rent-tracker')}
+                        />
+                        <MenuRow
+                            icon="calendar-outline"
+                            label="Inspection Bookings"
+                            onPress={() => router.push('/shared-screens/InspectionsScreen')}
+                        />
+                        <MenuRow
+                            icon="construct-outline"
+                            label="Maintenance Requests"
+                            onPress={() => router.push('/shared-screens/MaintenanceScreen')}
+                        />
+                        <MenuRow
+                            icon="analytics-outline"
+                            label="Analytics"
+                            onPress={() => Alert.alert('Coming Soon', 'Analytics dashboard is coming soon.')}
+                        />
+                        {role === 'LANDLORD' && (
+                            <MenuRow
+                                icon="people-circle-outline"
+                                label="Manage Agents"
+                                onPress={() => router.push('/landlord-screens/manage-agents')}
+                            />
+                        )}
+                    </Section>
 
-                {/* ── Legal ── */}
-                <Section title="Legal">
-                    <MenuRow
-                        icon="document-outline"
-                        label="Terms of Service"
-                        onPress={() => Linking.openURL('https://edenhome.ng/terms')}
-                    />
-                    <MenuRow
-                        icon="eye-outline"
-                        label="Privacy Policy"
-                        onPress={() => Linking.openURL('https://edenhome.ng/privacy')}
-                    />
-                </Section>
+                    <Section title="ACCOUNT">
+                        <MenuRow
+                            icon="person-outline"
+                            label="Edit Profile"
+                            onPress={() => router.push('/profile/edit-profile')}
+                        />
+                        {role === 'AGENT' && (
+                            <MenuRow
+                                icon="briefcase-outline"
+                                label="Join another Landlord"
+                                onPress={() => router.push('/auth/accept-invite')}
+                            />
+                        )}
+                        {role === 'LANDLORD' && (
+                            <MenuRow
+                                icon="card-outline"
+                                label="Bank Account"
+                                value={profile?.bank_name || 'Not set'}
+                                onPress={() => router.push('/landlord-screens/bank-account')}
+                            />
+                        )}
+                        <View style={[styles.switchRowInside, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+                            <View style={styles.switchRowLeft}>
+                                <View style={[styles.menuIconWrap, { backgroundColor: '#407BFF15' }]}>
+                                    <Ionicons name="notifications-outline" size={20} color="#407BFF" />
+                                </View>
+                                <Text style={[styles.menuRowLabel, { color: colors.text }]}>Push Notifications</Text>
+                            </View>
+                            <Switch
+                                value={pushEnabled}
+                                onValueChange={handleTogglePush}
+                                trackColor={{ false: '#E5E7EB', true: '#1D4ED8' }}
+                                thumbColor="#FFF"
+                            />
+                        </View>
+                        {role === 'LANDLORD' && (
+                            <MenuRow
+                                icon="shield-checkmark-outline"
+                                label="KYC Status"
+                                value={profile?.is_verified ? 'Verified' : 'Pending'}
+                                onPress={() => { }}
+                            />
+                        )}
+                        {role === 'AGENT' && (
+                            <MenuRow
+                                icon="link-outline"
+                                label="Linked Landlord"
+                                value={profile?.delegated_landlord_name || 'Assigned'}
+                                onPress={() => { }}
+                                showChevron={false}
+                            />
+                        )}
+                        <MenuRow
+                            icon="flask-outline"
+                            label="Test Push"
+                            onPress={handleTestPush}
+                            loading={loadingPush}
+                        />
+                    </Section>
 
-                {/* ── Sign Out ── */}
-                <View style={styles.section}>
-                    <MenuRow
-                        icon="log-out-outline"
-                        label="Sign Out"
-                        danger
+                    <Section title="APPEARANCE">
+                        <MenuRow
+                            icon={isDark ? "moon" : "sunny-outline"}
+                            label="Dark Mode"
+                            hasSwitch={true}
+                            switchValue={isDark}
+                            onSwitchChange={toggleTheme}
+                            onPress={() => { }}
+                        />
+                    </Section>
+
+                    <Section title="SUPPORT">
+                        <MenuRow
+                            icon="help-circle-outline"
+                            label="Help & Support"
+                            onPress={() => router.push('/shared-screens/HelpSupportScreen')}
+                        />
+                        <MenuRow
+                            icon="document-text-outline"
+                            label="Terms & Privacy"
+                            onPress={() => Linking.openURL('https://Eden.ng/terms')}
+                        />
+                    </Section>
+
+                    {/* Sign Out Button */}
+                    <TouchableOpacity
+                        style={[styles.signOutBtn, { backgroundColor: isDark ? '#450a0a' : '#FEF2F2' }]}
                         onPress={() => setShowSignOutModal(true)}
-                    />
+                    >
+                        <View style={styles.signOutContent}>
+                            <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+                            <Text style={styles.signOutText}>Log Out</Text>
+                        </View>
+                    </TouchableOpacity>
+
+                    <Text style={styles.versionText}>Version 1.0.0</Text>
                 </View>
             </ScrollView>
 
             {/* Sign Out Modal */}
-            <Modal
-                visible={showSignOutModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowSignOutModal(false)}
-            >
+            <Modal visible={showSignOutModal} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
-                        <View style={[styles.modalIconCircle, { backgroundColor: '#FFEDED' }]}>
-                            <Ionicons name="log-out-outline" size={32} color="#FF4D4D" />
+                        <View style={[styles.modalIconCircle, { backgroundColor: isDark ? '#450a0a' : '#FEF2F2' }]}>
+                            <Ionicons name="log-out-outline" size={32} color="#EF4444" />
                         </View>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Sign Out?</Text>
                         <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-                            Are you sure you want to sign out of your account?
+                            Are you sure you want to sign out?
                         </Text>
-                        <TouchableOpacity style={styles.modalSignOutBtn} onPress={handleSignOut}>
+                        <TouchableOpacity style={[styles.modalSignOutBtn, { backgroundColor: '#EF4444' }]} onPress={handleSignOut}>
                             <Text style={styles.modalSignOutText}>Yes, Sign Out</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                            style={styles.modalCancelBtn}
                             onPress={() => setShowSignOutModal(false)}
                         >
                             <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
@@ -284,78 +414,49 @@ const LandlordProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    scrollContent: { paddingHorizontal: 20, paddingBottom: 48 },
-    title: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginVertical: 20 },
-
-    // Profile card
-    profileCard: {
-        borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center',
-        gap: 14, marginBottom: 8, borderWidth: 1,
-        shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05, shadowRadius: 10, elevation: 3,
-    },
-    avatarWrap: { position: 'relative' },
-    avatar: { width: 72, height: 72, borderRadius: 36 },
-    verifiedDot: {
-        position: 'absolute', bottom: 0, right: 0,
-        width: 20, height: 20, borderRadius: 10,
-        justifyContent: 'center', alignItems: 'center',
-        borderWidth: 2, borderColor: '#fff',
-    },
-    profileInfo: { flex: 1 },
-    name: { fontSize: 17, fontWeight: '700', marginBottom: 2 },
-    email: { fontSize: 13, marginBottom: 2 },
-    phone: { fontSize: 13, marginBottom: 6 },
-    roleBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-    roleBadgeText: { fontSize: 12, fontWeight: '600' },
-
-    // Sections
-    section: { marginTop: 24 },
-    sectionHeader: {
-        fontSize: 11, fontWeight: '700', textTransform: 'uppercase',
-        letterSpacing: 1, marginBottom: 10, paddingLeft: 4,
-    },
-    sectionGroup: { gap: 8 },
-
-    // Menu rows
-    menuRow: {
-        flexDirection: 'row', alignItems: 'center', gap: 12,
-        padding: 14, borderRadius: 14, borderWidth: 1,
-    },
-    menuIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+    scrollContent: { paddingBottom: 40 },
+    headerContainer: { marginBottom: 20 },
+    headerGradient: { height: 260, paddingTop: 60, paddingHorizontal: 20 },
+    decorCircle: { position: 'absolute', borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.1)' },
+    profileHeaderContent: { alignItems: 'center' },
+    avatarContainer: { position: 'relative', marginBottom: 12 },
+    avatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#FFF' },
+    editAvatarBtn: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#407BFF', padding: 6, borderRadius: 20, borderWidth: 2, borderColor: '#FFF' },
+    userName: { fontSize: 20, fontWeight: '700', color: '#FFF', marginBottom: 8 },
+    verifiedRow: { flexDirection: 'row', alignItems: 'center' },
+    verifiedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+    verifiedText: { color: '#BFDBFE', fontSize: 12, fontWeight: '600', marginLeft: 6 },
+    statsCard: { marginHorizontal: 20, marginTop: -40, padding: 20, borderRadius: 16, flexDirection: 'row', justifyContent: 'space-between', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+    statItem: { alignItems: 'center', flex: 1 },
+    statValue: { fontSize: 18, fontWeight: '700' },
+    statLabel: { fontSize: 12, marginTop: 4 },
+    statDivider: { width: 1, height: '100%' },
+    menuContainer: { paddingHorizontal: 20, marginTop: 10 },
+    section: { marginBottom: 24 },
+    sectionHeader: { fontSize: 12, fontWeight: '700', color: '#94A3B8', marginBottom: 12, letterSpacing: 1 },
+    sectionGroup: { borderRadius: 12, overflow: 'hidden', borderWidth: 1 },
+    menuRow: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
+    menuIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
     menuRowContent: { flex: 1 },
-    menuRowLabel: { fontSize: 15, fontWeight: '500' },
-    menuRowValue: { fontSize: 12, marginTop: 2 },
-    menuBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-    menuBadgeText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-
-    // Switch rows
-    switchRow: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        padding: 14, borderRadius: 14, borderWidth: 1,
-    },
-    switchLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-
-    // Modal
-    modalOverlay: {
-        flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
-        justifyContent: 'center', alignItems: 'center', padding: 32,
-    },
-    modalCard: {
-        width: '100%', borderRadius: 28, padding: 32, alignItems: 'center',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.15, shadowRadius: 20, elevation: 12,
-    },
-    modalIconCircle: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 22, fontWeight: '800', marginBottom: 10 },
-    modalSubtitle: { fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-    modalSignOutBtn: {
-        width: '100%', backgroundColor: '#FF4D4D', paddingVertical: 16,
-        borderRadius: 14, alignItems: 'center', marginBottom: 12,
-    },
-    modalSignOutText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-    modalCancelBtn: { width: '100%', paddingVertical: 16, borderRadius: 14, alignItems: 'center', borderWidth: 1 },
-    modalCancelText: { fontSize: 16, fontWeight: '500' },
+    menuRowLabel: { fontSize: 16, fontWeight: '500' },
+    menuRowValue: { fontSize: 14, marginRight: 8 },
+    menuBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, marginRight: 8 },
+    menuBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
+    switchRowInside: { flexDirection: 'row', alignItems: 'center', padding: 16, justifyContent: 'space-between' },
+    switchRowLeft: { flexDirection: 'row', alignItems: 'center' },
+    signOutBtn: { marginHorizontal: 20, padding: 16, borderRadius: 12, alignItems: 'center' },
+    signOutContent: { flexDirection: 'row', alignItems: 'center' },
+    signOutText: { color: '#EF4444', fontWeight: '600', marginLeft: 8 },
+    versionText: { textAlign: 'center', color: '#94A3B8', marginTop: 20, fontSize: 12 },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    modalCard: { width: '100%', padding: 24, borderRadius: 20, alignItems: 'center' },
+    modalIconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+    modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
+    modalSubtitle: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
+    modalSignOutBtn: { width: '100%', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+    modalSignOutText: { color: '#FFF', fontWeight: '600' },
+    modalCancelBtn: { padding: 16 },
+    modalCancelText: { fontWeight: '600' }
 });
 
 export default LandlordProfileScreen;

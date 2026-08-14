@@ -1,16 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
-import { supabase } from '../../lib/supabase';
 import { handleError } from '../../lib/errorHandler';
-import { sanitizeEmail, validateEmail, validateRequired, validateAll } from '../../lib/validation';
+// import { configureGoogleSignIn, signInWithGoogle } from '../../lib/google-auth';
+import { supabase } from '../../lib/supabase';
 import { withTimeout } from '../../lib/timeout';
+import { sanitizeEmail, validateAll, validateEmail, validateRequired } from '../../lib/validation';
+
+// configureGoogleSignIn();
 
 const LoginScreen = () => {
     const router = useRouter();
@@ -55,9 +58,25 @@ const LoginScreen = () => {
         }
     };
 
+    // const handleGoogleLogin = async () => {
+    //     setLoading(true);
+    //     try {
+    //         console.log("handleGoogleLogin: Starting google signin")
+    //         const { data, error } = await signInWithGoogle();
+    //         if (error) throw error;
+    //         console.log("handleGoogleLogin: Google signin success")
+    //     } catch (e: any) {
+    //         const err = await handleError(e);
+    //         console.log(err)
+    //         showError(err);
+    //     } finally {
+    //         setLoading(false);
+    //     }
+    // };
+
     return (
-        <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScreenWrapper withScrollView={false}>
+            <View style={styles.container}>
                 <View style={styles.topSection}>
                     <Image
                         source={require('../../assets/images/EdenIcon.png')}
@@ -88,15 +107,15 @@ const LoginScreen = () => {
                         }
                     />
 
-                    <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/auth/new-password')}>
+                    <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/auth/reset-password')}>
                         <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>Forgot Password ?</Text>
                     </TouchableOpacity>
 
                     <CustomButton
-                        title={loading ? "Logging in..." : "Login"}
+                        title="Login"
                         onPress={handleLogin}
                         style={styles.loginButton}
-                        disabled={loading}
+                        loading={loading}
                     />
 
                     <TouchableOpacity onPress={() => router.push('/auth/signup')}>
@@ -106,54 +125,59 @@ const LoginScreen = () => {
                     </TouchableOpacity>
                 </View>
 
-                <View style={styles.dividerContainer}>
-                    <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
-                </View>
+                <View style={styles.bottomSection}>
+                    <View style={styles.dividerContainer}>
+                        <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
+                    </View>
 
-                <View style={styles.socialContainer}>
-                    <TouchableOpacity style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary }]}>
-                        <Ionicons name="logo-apple" size={24} color={colors.text} />
-                        <Text style={[styles.socialButtonText, { color: colors.text }]}>Continue with Apple ID</Text>
-                    </TouchableOpacity>
+                    <View style={styles.socialContainer}>
+                        <TouchableOpacity style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+                            <Image source={require('../../assets/icon/social/apple.png')} style={styles.socialIcon} />
+                            <Text style={[styles.socialButtonText, { color: colors.text }]}>Continue with Apple ID</Text>
+                        </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary }]}>
-                        <Image
-                            source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg' }}
-                            style={{ width: 24, height: 24 }}
-                        />
-                        <Text style={[styles.socialButtonText, { color: colors.text }]}>Continue with Google</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary }]}
+                            disabled={loading}
+                        >
+                            <Image source={require('../../assets/icon/social/google.png')} style={styles.socialIcon} />
+                            <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                                Continue with Google
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </ScrollView>
+            </View>
         </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    scrollContent: {
+    container: {
+        flex: 1,
         paddingHorizontal: 24,
-        paddingVertical: 40,
+        paddingVertical: 16,
+        justifyContent: 'space-around',
     },
     topSection: {
         alignItems: 'center',
-        marginBottom: 40,
     },
     icon: {
-        width: 80,
-        height: 80,
-        marginBottom: 16,
+        width: 70,
+        height: 70,
+        marginBottom: 12,
     },
     title: {
-        fontSize: 28,
+        fontSize: 26,
         fontWeight: '800',
         color: '#0047AB',
         textAlign: 'center',
     },
     formContainer: {
-        gap: 16,
+        gap: 14,
     },
     inputWrapper: {
-        height: 56,
+        height: 52,
         borderWidth: 1,
         borderColor: '#0047AB',
         borderRadius: 8,
@@ -179,20 +203,23 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     loginButton: {
-        marginTop: 10,
+        marginTop: 6,
     },
     signupPrompt: {
         textAlign: 'center',
         color: '#666',
         fontSize: 14,
-        marginTop: 10,
+        marginTop: 8,
     },
     signupLink: {
         color: '#0047AB',
         fontWeight: '600',
     },
+    bottomSection: {
+        alignItems: 'stretch',
+    },
     dividerContainer: {
-        marginVertical: 30,
+        marginVertical: 16,
         alignItems: 'center',
     },
     dividerText: {
@@ -203,7 +230,7 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     socialButton: {
-        height: 56,
+        height: 52,
         borderWidth: 1,
         borderColor: '#0047AB',
         borderRadius: 12,
@@ -218,6 +245,10 @@ const styles = StyleSheet.create({
         color: '#333',
         fontWeight: '500',
     },
+    socialIcon: {
+        height: 24,
+        width: 24,
+    }
 });
 
 export default LoginScreen;

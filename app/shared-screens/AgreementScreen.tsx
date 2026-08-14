@@ -145,10 +145,34 @@ const AgreementScreen = () => {
                     text: 'Sign Now',
                     onPress: async () => {
                         const success = await signAgreement(agreement!.id);
-                        if (success && agreement?.status === 'owner_signed' && !isOwner) {
-                            Alert.alert('🎉 Agreement Complete', 'Both parties have signed. Funds will be released to the owner.', [
-                                { text: 'OK', onPress: () => router.back() },
-                            ]);
+                        if (success) {
+                            const otherPartySigned = isOwner ? !!agreement?.renter_signed_at : !!agreement?.owner_signed_at;
+                            if (otherPartySigned) {
+                                if (!isOwner) {
+                                    Alert.alert(
+                                        '🎉 Agreement Fully Signed!',
+                                        'Agreement fully signed! Now you can proceed to pay.',
+                                        [
+                                            {
+                                                text: 'Proceed to Pay',
+                                                onPress: () => {
+                                                    router.push({
+                                                        pathname: '/shared-screens/RentPaymentScreen',
+                                                        params: { rental_id: agreement!.rental_id }
+                                                    });
+                                                }
+                                            },
+                                            { text: 'OK' }
+                                        ]
+                                    );
+                                } else {
+                                    Alert.alert(
+                                        '🎉 Agreement Fully Signed!',
+                                        'Agreement fully signed! Waiting for tenant payment.',
+                                        [{ text: 'OK' }]
+                                    );
+                                }
+                            }
                         }
                     },
                 },
@@ -433,9 +457,26 @@ const AgreementScreen = () => {
                         <View style={[styles.signedBadge, { backgroundColor: '#22c55e15' }]}>
                             <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
                             <Text style={[styles.signedText, { color: '#22c55e' }]}>
-                                You have signed — {otherSigned ? 'Agreement complete!' : 'Waiting for other party'}
+                                {isOwner 
+                                    ? (otherSigned ? 'Agreement complete! Awaiting tenant payment.' : 'You have signed — Waiting for tenant to sign')
+                                    : (otherSigned ? 'Agreement fully signed! Now you can proceed to pay.' : 'You have signed — Waiting for landlord to sign')
+                                }
                             </Text>
                         </View>
+                        {/* If tenant and fully signed, show Proceed to Pay button */}
+                        {!isOwner && otherSigned && (
+                            <TouchableOpacity
+                                style={[styles.payBtn, { backgroundColor: colors.primary }]}
+                                onPress={() => router.push({
+                                    pathname: '/shared-screens/RentPaymentScreen',
+                                    params: { rental_id: agreement.rental_id }
+                                })}
+                            >
+                                <Ionicons name="card-outline" size={18} color="#fff" />
+                                <Text style={styles.payBtnText}>Proceed to Pay</Text>
+                                <Ionicons name="arrow-forward" size={18} color="#fff" style={{ position: 'absolute', right: 16 }} />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 ) : (
                     <TouchableOpacity

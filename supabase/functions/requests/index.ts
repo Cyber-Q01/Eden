@@ -6,19 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
-function parseImages(images: unknown): string[] {
-  if (Array.isArray(images)) return images;
-  if (typeof images === 'string') {
-    try {
-      const parsed = JSON.parse(images);
-      return Array.isArray(parsed) ? parsed : [images];
-    } catch {
-      return images.length > 0 ? [images] : [];
-    }
-  }
-  return [];
-}
-
 function createUserClient(req: Request) {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) throw new Error('Missing Authorization header');
@@ -59,6 +46,35 @@ Deno.serve(async (req) => {
   try {
     const supabase = createUserClient(req);
     const userId = await getUserId(req);
+
+    if (req.method === 'GET') {
+        const url = new URL(req.url);
+        const type = url.searchParams.get('type');
+  
+        if (type === 'maintenance') {
+          const { data, error } = await supabase
+            .from('maintenance_requests')
+            .select('*')
+            .eq('tenant_id', userId)
+            .order('created_at', { ascending: false });
+  
+          if (error) return errorResponse(error.message, 500);
+          return jsonResponse(data || []);
+        }
+  
+        if (type === 'complaint') {
+          const { data, error } = await supabase
+            .from('complaint_requests')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+  
+          if (error) return errorResponse(error.message, 500);
+          return jsonResponse(data || []);
+        }
+  
+        return errorResponse('Invalid type. Must be "maintenance" or "complaint".');
+    }
 
     if (req.method === 'POST') {
       const { type, category, description, photos } = await req.json();

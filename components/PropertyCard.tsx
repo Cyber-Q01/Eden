@@ -1,24 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Dimensions, ImageSourcePropType, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
-const { width } = Dimensions.get('window');
-
 interface PropertyCardProps {
-    image: ImageSourcePropType | string;
+    image: any;
     title: string;
     price: string;
     location: string;
     onPress?: () => void;
     variant?: 'vertical' | 'horizontal';
+    isFavorite?: boolean;
     onFavoritePress?: () => void;
-    onRemovePress?: () => void;
     containerStyle?: ViewStyle;
     isVerified?: boolean;
     buttonText?: string;
     onButtonPress?: () => void;
+    isLandlord?: boolean;
+    views?: number;
+    status?: string;
+    onEdit?: () => void;
+    commission?: string;
 }
 
 const PropertyCard: React.FC<PropertyCardProps> = ({
@@ -29,54 +32,74 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     onPress,
     variant = 'vertical',
     onFavoritePress,
-    onRemovePress,
+    isFavorite,
     containerStyle,
-    isVerified = true, // Default to true as per user request design
-    buttonText = "PROCEED-N666",
-    onButtonPress
+    isVerified = true,
+    buttonText = "BOOK NOW",
+    onButtonPress,
+    isLandlord,
+    views,
+    status,
+    onEdit,
+    commission
 }) => {
-    const { colors, isDark } = useTheme();
+    const { colors } = useTheme();
 
-    // Robust source resolver for expo-image
     const getSource = (src: any) => {
         if (!src) return require('../assets/images/Homes/home1.png');
-        if (typeof src === 'string') {
-            if (src.startsWith('http')) return { uri: src };
-            return { uri: src };
-        }
-        if (typeof src === 'number') return src;
-        if (src?.uri) return { uri: src.uri };
+        if (typeof src === 'string') return { uri: src };
         return src;
     };
 
     const finalSource = getSource(image);
-
     const placeholder = require('../assets/images/Homes/home1.png');
 
+    // VARIANT: 'horizontal' (Matches the "Vertical Listing" design in the HTML)
+    // Horizontal row for vertical lists
     if (variant === 'horizontal') {
         return (
-            <TouchableOpacity style={[styles.cardHorizontal, { backgroundColor: colors.card, borderColor: colors.border }, containerStyle]} onPress={onPress}>
+            <TouchableOpacity
+                style={[styles.cardList, { backgroundColor: colors.card }, containerStyle]}
+                onPress={onPress}
+                activeOpacity={0.8}
+            >
                 <Image
                     source={finalSource}
                     placeholder={placeholder}
-                    style={styles.imageHorizontal}
+                    style={styles.imageList}
                     contentFit="cover"
                     transition={200}
                 />
-                <View style={styles.contentHorizontal}>
-                    <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-                    <Text style={[styles.price, { color: colors.primary }]}>{price}</Text>
-                    <Text style={[styles.location, { color: colors.textSecondary }]}>{location}</Text>
-                    {onRemovePress && (
-                        <TouchableOpacity style={styles.removeButton} onPress={onRemovePress}>
-                            <Text style={styles.removeText}>Remove</Text>
-                        </TouchableOpacity>
-                    )}
+                <View style={styles.contentList}>
+                    <Text numberOfLines={1} style={[styles.titleList, { color: colors.text }]}>{title}</Text>
+                    <View style={styles.locationContainerList}>
+                        <Ionicons name="location-sharp" size={12} color={colors.textSecondary} />
+                        <Text numberOfLines={1} style={[styles.locationTextList, { color: colors.textSecondary }]}>{location}</Text>
+                    </View>
+                    <Text style={[styles.priceList, { color: colors.primary }]}>{price}</Text>
+                </View>
+                {!isLandlord && (
+                    <TouchableOpacity
+                        style={styles.favoriteButtonList}
+                        onPress={onFavoritePress}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons
+                            name={isFavorite ? "heart" : "heart-outline"}
+                            size={18}
+                            color={isFavorite ? "#EF4444" : colors.textSecondary}
+                        />
+                    </TouchableOpacity>
+                )}
+                <View style={styles.arrowContainer}>
+                    <Ionicons name="arrow-forward" size={20} color={colors.textSecondary} />
                 </View>
             </TouchableOpacity>
         );
     }
 
+    // VARIANT: 'vertical' (Matches the "Horizontal Listing" design in the HTML)
+    // Vertical card for horizontal carousels
     return (
         <TouchableOpacity
             style={[styles.cardVertical, { backgroundColor: colors.card }, containerStyle]}
@@ -92,72 +115,103 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                     transition={200}
                 />
 
-                {isVerified && (
+                {isVerified && !isLandlord && (
                     <View style={styles.verifiedBadge}>
                         <Text style={styles.verifiedText}>Verified</Text>
                     </View>
                 )}
 
-                {onFavoritePress && (
+                {isLandlord && status && (
+                    <View style={[styles.statusBadge, { backgroundColor: status.toLowerCase() === 'available' ? '#059669' : '#F59E0B' }]}>
+                        <Text style={styles.statusText}>{status}</Text>
+                    </View>
+                )}
+
+                {isLandlord && onEdit && (
+                    <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={onEdit}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="pencil" size={14} color="#0F172A" />
+                    </TouchableOpacity>
+                )}
+
+                {!isLandlord && (
                     <TouchableOpacity
                         style={styles.favoriteButton}
                         onPress={onFavoritePress}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="heart" size={20} color="#FF4D4D" />
+                        <Ionicons
+                            name={isFavorite ? "heart" : "heart-outline"}
+                            size={16}
+                            color={isFavorite ? "#EF4444" : colors.textSecondary}
+                        />
                     </TouchableOpacity>
                 )}
             </View>
 
             <View style={styles.contentVertical}>
-                <Text style={[styles.title, { color: colors.primary }]}>{title}</Text>
+                <Text numberOfLines={1} style={[styles.titleVertical, { color: colors.text }]}>{title}</Text>
 
-                <View style={styles.locationContainer}>
+                <View style={styles.locationContainerVertical}>
                     <Ionicons name="location-sharp" size={14} color={colors.textSecondary} />
-                    <Text style={[styles.locationText, { color: colors.textSecondary }]}>{location}</Text>
+                    <Text numberOfLines={1} style={[styles.locationTextVertical, { color: colors.textSecondary }]}>{location}</Text>
                 </View>
 
-                <Text style={[styles.priceLarge, { color: colors.primary }]}>{price}</Text>
-
-                {buttonText && (
-                    <TouchableOpacity
-                        style={[styles.proceedButton, { backgroundColor: '#F4A261' }]}
-                        onPress={onButtonPress || onPress}
-                    >
-                        <Text style={styles.proceedButtonText}>{buttonText}</Text>
-                    </TouchableOpacity>
-                )}
+                <View style={styles.priceRowVertical}>
+                    <View>
+                        <Text style={[styles.priceVertical, { color: colors.primary }]}>{price}</Text>
+                        {commission && (
+                            <Text style={[styles.commissionText, { color: '#10B981' }]}>{commission}</Text>
+                        )}
+                    </View>
+                    {isLandlord && views !== undefined && (
+                        <View style={styles.viewsContainer}>
+                            <Ionicons name="eye-outline" size={12} color={colors.textSecondary} />
+                            <Text style={[styles.viewsText, { color: colors.textSecondary }]}>{views} views</Text>
+                        </View>
+                    )}
+                </View>
             </View>
+
+            {buttonText && !isLandlord && (
+                <TouchableOpacity
+                    style={[styles.proceedButton, { backgroundColor: '#FDBA74' }]}
+                    onPress={onButtonPress || onPress}
+                >
+                    <Text style={styles.proceedButtonText}>{buttonText}</Text>
+                </TouchableOpacity>
+            )}
         </TouchableOpacity>
     );
 };
 
 const styles = StyleSheet.create({
-    // Vertical Styles
+    // CARD STYLE (Used in horizontal listings)
     cardVertical: {
-        width: width * 0.8, // Fallback width
+        width: 280,
         borderRadius: 24,
-        padding: 12,
+        overflow: 'hidden',
         backgroundColor: '#FFFFFF',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 5,
-        marginBottom: 16,
+        shadowRadius: 16,
+        elevation: 4,
+        alignItems: 'center',
     },
     imageWrapperVertical: {
         width: '100%',
-        height: 140,
-        borderRadius: 20,
+        height: 160,
         overflow: 'hidden',
         position: 'relative',
-        backgroundColor: '#F0F0F0', // Debug background
+        marginBottom: 12,
     },
     imageVertical: {
         width: '100%',
         height: '100%',
-        backgroundColor: '#F3F4F6',
     },
     verifiedBadge: {
         position: 'absolute',
@@ -171,101 +225,165 @@ const styles = StyleSheet.create({
     verifiedText: {
         color: '#FFFFFF',
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: '500',
     },
     favoriteButton: {
         position: 'absolute',
         top: 12,
         right: 12,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         backgroundColor: '#FFFFFF',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
     },
     contentVertical: {
-        paddingTop: 12,
-        paddingHorizontal: 4,
+        width: '100%',
+        paddingHorizontal: 16,
+        paddingBottom: 12,
         gap: 4,
     },
-    title: {
-        fontSize: 18,
+    titleVertical: {
+        fontSize: 16,
         fontWeight: '700',
-        lineHeight: 24,
+        fontFamily: 'System', // Closest to Plus Jakarta Sans if not loaded
     },
-    locationContainer: {
+    locationContainerVertical: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
     },
-    locationText: {
-        fontSize: 14,
-        fontWeight: '400',
+    locationTextVertical: {
+        fontSize: 12,
+        color: '#6B7280',
     },
-    priceLarge: {
-        fontSize: 20,
+    priceVertical: {
+        fontSize: 16,
         fontWeight: '800',
-        marginTop: 4,
-        marginBottom: 8,
+        marginTop: 2,
     },
     proceedButton: {
-        width: '100%',
-        height: 48,
+        alignSelf: 'stretch',
+        marginHorizontal: 16,
+        marginBottom: 16,
+        height: 40,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 4,
+        marginTop: 8,
     },
     proceedButtonText: {
         color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '800',
-        letterSpacing: 0.5,
+    },
+    statusBadge: {
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 99,
+    },
+    statusText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    editButton: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        width: 30,
+        height: 30,
+        borderRadius: 15,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    priceRowVertical: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 4,
+    },
+    viewsContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    viewsText: {
+        fontSize: 11,
+        fontWeight: '500',
     },
 
-    // Horizontal Styles (Kept as legacy or update if needed)
-    cardHorizontal: {
+    // LIST STYLE (Used in vertical listings)
+    cardList: {
+        alignSelf: 'stretch',
         flexDirection: 'row',
+        backgroundColor: '#FFFFFF',
         borderRadius: 20,
-        overflow: 'hidden',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 3,
-        padding: 12,
+        shadowOpacity: 0.06,
+        shadowRadius: 16,
+        elevation: 2,
+        alignItems: 'center',
         gap: 16,
+        overflow: 'hidden',
+        marginBottom: 12,
     },
-    imageHorizontal: {
-        width: 120,
-        height: 120,
-        borderRadius: 12,
+    imageList: {
+        width: 96,
+        height: 96,
+        borderTopLeftRadius: 20,
+        borderBottomLeftRadius: 20,
     },
-    contentHorizontal: {
+    contentList: {
         flex: 1,
-        justifyContent: 'center',
+        gap: 4,
+        paddingVertical: 8,
     },
-    removeButton: {
-        marginTop: 8,
-    },
-    removeText: {
-        fontSize: 12,
-        color: '#FF4D4D',
-        fontWeight: '600',
-    },
-    price: {
-        fontSize: 15,
+    titleList: {
+        fontSize: 16,
         fontWeight: '700',
-        marginBottom: 4,
     },
-    location: {
+    locationContainerList: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    locationTextList: {
         fontSize: 12,
+        color: '#6B7280',
+    },
+    priceList: {
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    arrowContainer: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    favoriteButtonList: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    commissionText: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: 2,
     },
 });
 

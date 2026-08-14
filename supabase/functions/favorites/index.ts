@@ -7,11 +7,16 @@ const corsHeaders = {
 };
 
 function parseImages(images: unknown): string[] {
-  if (Array.isArray(images)) return images;
+  if (Array.isArray(images)) return images.filter(i => typeof i === 'string' && i.length > 0);
   if (typeof images === 'string') {
+    if (images.startsWith('{') && images.endsWith('}')) {
+      const inner = images.slice(1, -1);
+      if (inner.length === 0) return [];
+      return inner.split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean);
+    }
     try {
       const parsed = JSON.parse(images);
-      return Array.isArray(parsed) ? parsed : [images];
+      return Array.isArray(parsed) ? parsed.filter(i => typeof i === 'string' && i.length > 0) : [];
     } catch {
       return images.length > 0 ? [images] : [];
     }

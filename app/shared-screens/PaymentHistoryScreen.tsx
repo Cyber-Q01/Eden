@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    RefreshControl,
     ScrollView,
     Share,
     StyleSheet,
@@ -217,6 +218,7 @@ const PaymentDetailsScreen = () => {
     const copyReference = async () => {
         if (!payment) return;
         try {
+
             await Clipboard.setStringAsync(payment.paystack_reference);
             showSuccess('Reference copied!');
         } catch (e) {
@@ -229,7 +231,7 @@ const PaymentDetailsScreen = () => {
         try {
             await Share.share({
                 message: [
-                    'Transaction Receipt — EdenHome',
+                    'Transaction Receipt — Eden',
                     '',
                     `Type: ${payment.type === 'rent' ? 'Rent Payment' :
                         payment.type === 'membership' ? 'Membership Fee' :
@@ -347,10 +349,14 @@ const PaymentDetailsScreen = () => {
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.scrollContent}
                     refreshControl={
-                        <ActivityIndicator
-                            animating={refreshing}
-                            color={colors.primary}
-                            style={{ marginTop: 10 }}
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={() => {
+                                setRefreshing(true);
+                                loadPaymentHistory();
+                            }}
+                            colors={[colors.primary]}
+                            tintColor={colors.primary}
                         />
                     }
                 >

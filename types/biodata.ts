@@ -19,6 +19,7 @@ export type BiodataForm = {
     bank_name: string;
     account_number: string;
     account_name: string;
+    bank_code?: string;
 };
 
 export type ModalKeys = 'gender' | 'idType' | 'employment' | 'income' | 'relationship' | 'bank';

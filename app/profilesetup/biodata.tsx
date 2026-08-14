@@ -1,5 +1,7 @@
+import BackButton from '@/components/BackButton';
+import { EMPLOYER_HIDDEN_STATUSES } from '@/constants/biodataOptions';
+import { useBankDetails } from '@/hooks/useBankDetails';
 import { useBioData } from '@/hooks/useBioData';
-import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -46,6 +48,7 @@ const EMPTY_FORM: BiodataForm = {
     bank_name: '',
     account_number: '',
     account_name: '',
+    bank_code: '',
 };
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -54,6 +57,7 @@ const BioDataScreen = () => {
     const { colors } = useTheme();
     const { role } = useAuth();
     const { submitBioData, isSubmitting } = useBioData();
+    const { fetchBanks } = useBankDetails();
     const router = useRouter()
     const isLandlord = role === 'LANDLORD' || role === 'ADMIN';
     const STEP_LABELS = isLandlord
@@ -64,6 +68,7 @@ const BioDataScreen = () => {
     const [step, setStep] = useState(0);
     const [showDobPicker, setShowDobPicker] = useState(false);
     const [form, setForm] = useState<BiodataForm>(EMPTY_FORM);
+    const [bankOptions, setBankOptions] = useState<any[]>([]);
     const [modals, setModals] = useState<Record<ModalKeys, boolean>>({
         gender: false,
         idType: false,
@@ -72,6 +77,15 @@ const BioDataScreen = () => {
         relationship: false,
         bank: false,
     });
+
+    // Fetch banks on mount
+    React.useEffect(() => {
+        const loadBanks = async () => {
+            const list = await fetchBanks();
+            setBankOptions(list);
+        };
+        loadBanks();
+    }, []);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -91,7 +105,67 @@ const BioDataScreen = () => {
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
+    const validateStep = () => {
+        const currentStepLabel = STEP_LABELS[step];
+
+        if (currentStepLabel === 'Personal') {
+            if (!form.phone_number.trim() || !form.dob || !form.gender) {
+                Alert.alert('Missing Info', 'Please fill in your phone number, date of birth, and gender.');
+                return false;
+            }
+        }
+
+        if (currentStepLabel === 'Identity') {
+            // Identity Step validation logic:
+            // The user said "Except optional field and the id verification field"
+            // If they mean the whole step is optional, we skip.
+            // But usually ID Type and ID Number are basic biodata.
+            // I'll enforce ID Type and ID Number but keep images optional if they are considered "id verification field"
+            if (!form.id_type || !form.id_number.trim()) {
+                Alert.alert('Missing Info', 'Please select an ID type and enter your ID number.');
+                return false;
+            }
+        }
+
+        if (currentStepLabel === 'Occupation') {
+            if (!form.employment_status || !form.monthly_income_range) {
+                Alert.alert('Missing Info', 'Please select your employment status and income range.');
+                return false;
+            }
+            const needsEmployer = !EMPLOYER_HIDDEN_STATUSES.includes(form.employment_status);
+            if (needsEmployer && !form.employer_name.trim()) {
+                Alert.alert('Missing Info', 'Please enter your employer or business name.');
+                return false;
+            }
+        }
+
+        if (currentStepLabel === 'Business') {
+            if (!form.business_name.trim()) {
+                Alert.alert('Missing Info', 'Please enter your business or company name.');
+                return false;
+            }
+        }
+
+        if (currentStepLabel === 'Next of Kin') {
+            if (!form.next_of_kin_name.trim() || !form.next_of_kin_phone.trim() || !form.next_of_kin_relationship) {
+                Alert.alert('Missing Info', 'Please fill in all Next of Kin details.');
+                return false;
+            }
+        }
+
+        if (currentStepLabel === 'Bank') {
+            if (!form.bank_name || !form.account_number || !form.account_name) {
+                Alert.alert('Missing Info', 'Please provide valid bank details. The account name must be verified.');
+                return false;
+            }
+        }
+
+        return true;
+    };
+
     const handleNext = () => {
+        if (!validateStep()) return;
+
         if (step < totalSteps - 1) setStep(s => s + 1);
         else handleSubmit();
     };
@@ -201,6 +275,7 @@ const BioDataScreen = () => {
                 form={form}
                 updateForm={updateForm}
                 closeModal={closeModal}
+                bankOptions={bankOptions}
             />
         </ScreenWrapper>
     );

@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomButton from '../components/CustomButton';
 import ScreenWrapper from '../components/ScreenWrapper';
 
@@ -28,15 +29,25 @@ const OnboardingScreen = () => {
     const [currentStep, setCurrentStep] = useState(0);
     const router = useRouter();
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (currentStep < ONBOARDING_DATA.length - 1) {
             setCurrentStep(currentStep + 1);
         } else {
+            try {
+                await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+            } catch (error) {
+                console.error('Error saving onboarding state:', error);
+            }
             router.replace('/welcome');
         }
     };
 
-    const handleSkip = () => {
+    const handleSkip = async () => {
+        try {
+            await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+        } catch (error) {
+            console.error('Error saving onboarding state:', error);
+        }
         router.replace('/welcome');
     };
 

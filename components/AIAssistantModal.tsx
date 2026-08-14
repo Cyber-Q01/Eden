@@ -35,7 +35,7 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
     const [messages, setMessages] = useState<Message[]>([
         {
             role: 'assistant',
-            content: "Hi! 👋 I'm your EdenHome assistant. Ask me anything about renting in Nigeria — areas, prices, what to look out for, tenant rights, or how the app works!",
+            content: "Hi! 👋 I'm your Eden assistant. Ask me anything about renting in Nigeria — areas, prices, what to look out for, tenant rights, or how the app works!",
         },
     ]);
     const [input, setInput] = useState('');
@@ -198,7 +198,7 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
                                 <Ionicons name="sparkles" size={16} color="#fff" />
                             </View>
                             <View>
-                                <Text style={[styles.headerTitle, { color: colors.text }]}>EdenHome AI</Text>
+                                <Text style={[styles.headerTitle, { color: colors.text }]}>Eden AI</Text>
                                 <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
                                     {loading ? 'Thinking...' : 'Online'}
                                 </Text>

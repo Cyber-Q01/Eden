@@ -18,13 +18,13 @@ export const useAgreementStatuses = (applications: Application[]) => {
 
   const fetchStatuses = async () => {
     if (!applications.length) {
-      setAgreementStatuses({});
+      setAgreementStatuses(prev => Object.keys(prev).length === 0 ? prev : {});
       return;
     }
 
     const acceptedIds = applications.filter(a => a.status === 'accepted').map(a => a.id);
     if (!acceptedIds.length) {
-      setAgreementStatuses({});
+      setAgreementStatuses(prev => Object.keys(prev).length === 0 ? prev : {});
       return;
     }
 
@@ -47,7 +47,7 @@ export const useAgreementStatuses = (applications: Application[]) => {
 
       if (!rentals?.length) {
         console.log('No rentals found for accepted applications');
-        setAgreementStatuses({});
+        setAgreementStatuses(prev => Object.keys(prev).length === 0 ? prev : {});
         return;
       }
 
@@ -74,7 +74,7 @@ export const useAgreementStatuses = (applications: Application[]) => {
 
       if (!agreements?.length) {
         console.log('No agreements found for rentals');
-        setAgreementStatuses({});
+        setAgreementStatuses(prev => Object.keys(prev).length === 0 ? prev : {});
         return;
       }
 
@@ -102,7 +102,14 @@ export const useAgreementStatuses = (applications: Application[]) => {
       }, {} as { [key: string]: AgreementStatusInfo });
 
       console.log('Final status map:', statusMap);
-      setAgreementStatuses(statusMap);
+      
+      // ✅ Only update if the content has actually changed to prevent infinite re-render loops
+      setAgreementStatuses(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(statusMap)) {
+          return prev;
+        }
+        return statusMap;
+      });
 
     } catch (e) {
       console.error('Error fetching agreement statuses:', e);

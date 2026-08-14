@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Image, Platform, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import BiodataGuard from '../../components/BiodataGuard';
@@ -8,7 +9,7 @@ import RoleGuard from '../../components/RoleGuard';
 
 export default function TabLayout() {
     const insets = useSafeAreaInsets();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
 
     return (
         <RoleGuard allowedRole="TENANT">
@@ -23,7 +24,10 @@ export default function TabLayout() {
                             paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
                             marginBottom: Platform.OS === 'ios' ? 0 : 10,
                             backgroundColor: colors.tabBar,
-                            borderTopColor: colors.border,
+                            borderTopColor: isDark ? 'transparent' : colors.border,
+                            borderTopWidth: isDark ? 0 : 1,
+                            elevation: isDark ? 0 : 10,
+                            shadowOpacity: isDark ? 0 : 0.05,
                         }
                     ],
                     tabBarActiveTintColor: colors.primary,
@@ -47,15 +51,15 @@ export default function TabLayout() {
                     }}
                 />
                 <Tabs.Screen
-                    name="explore"
+                    name="applications"
                     options={{
-                        title: 'Explore',
+                        title: 'Applications',
                         tabBarIcon: ({ color, focused }) => (
                             <View style={styles.iconContainer}>
-                                <Image
-                                    source={require('../../assets/icon/tab/explore.png')}
-                                    style={[styles.icon, { tintColor: color }]}
-                                    resizeMode="contain"
+                                <Ionicons
+                                    name={focused ? 'document-text' : 'document-text-outline'}
+                                    size={24}
+                                    color={color}
                                 />
                             </View>
                         ),

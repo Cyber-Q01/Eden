@@ -1,11 +1,14 @@
+import BackButton from '@/components/BackButton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Dimensions,
     FlatList,
+    NativeScrollEvent,
     NativeSyntheticEvent,
     Platform,
     ScrollView,
@@ -15,9 +18,13 @@ import {
     View
 } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useInspections } from '../../hooks/useInspections';
 import { useFavorites, useProperty } from '../../hooks/useProperties';
-import { useCredits } from '../../hooks/useCredits';
+import { useLandlord } from '../../hooks/useLandlord';
+import { supabase } from '../../lib/supabase';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 const { width } = Dimensions.get('window');
 
@@ -81,39 +88,64 @@ const AmenityTag = ({ label, colors }: { label: string; colors: any }) => (
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
-const getCleanUrl = (url: string) => {
-    if (!url || !url.startsWith('http')) return url;
-    if (url.includes('supabase.co/storage/v1/object/public/')) {
-        const parts = url.split('/');
-        const fileName = parts[parts.length - 1];
-        const bucketName = url.includes('property-images') ? 'property-images' : 'request-images';
-        const projectRef = process.env.EXPO_PROJECT_REF;
-        return `https://${projectRef}.supabase.co/storage/v1/object/public/${bucketName}/${fileName}`;
-    }
-    return url;
+const PropertyVideoPlayer = ({ videoUrl }: { videoUrl: string }) => {
+    const player = useVideoPlayer(videoUrl, (p) => {
+        p.loop = true;
+        p.muted = true;
+    });
+
+    return (
+        <VideoView
+            player={player}
+            style={styles.video}
+            allowsFullscreen
+            allowsPictureInPicture
+        />
+    );
 };
 
 const PropertyDetailScreen = () => {
     const { id } = useLocalSearchParams();
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    const floatingButtonBg = isDark ? 'rgba(30, 41, 59, 0.85)' : 'rgba(255, 255, 255, 0.92)';
+    const floatingButtonIconColor = isDark ? '#FFFFFF' : '#333333';
 
     const { property, loading, error, refetch } = useProperty(id);
     const { addFavorite, removeFavorite, favorites } = useFavorites();
+    const { deleteProperty } = useLandlord();
+    const { user, role } = useAuth();
 
     const [activeIndex, setActiveIndex] = useState(0);
     const [showFees, setShowFees] = useState(false);
     const flatListRef = useRef<FlatList>(null);
 
-    const { credits, loading: creditsLoading, checkUnlocked, unlockProperty, fetchCredits } = useCredits();
-    const [isUnlocked, setIsUnlocked] = useState(false);
-    const [unlocking, setUnlocking] = useState(false);
+    const { checkBookingStatus } = useInspections();
+    const [isBooked, setIsBooked] = useState(false);
+    const [booking, setBooking] = useState(false);
 
     const propertyId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
 
+    const isOwner = user?.id === property?.landlord_id;
+    const isLandlord = role === 'LANDLORD';
+    const isLandlordOrAgent = role === 'LANDLORD' || role === 'AGENT';
+
     useEffect(() => {
         if (propertyId) {
-            checkUnlocked(propertyId).then(setIsUnlocked);
+            checkBookingStatus(propertyId).then(setIsBooked);
+            
+            // Increment view count
+            const incrementView = async () => {
+                try {
+                    const { error } = await supabase.rpc('increment_view_count', { 
+                        p_property_id: propertyId 
+                    });
+                    if (error) console.error('[PropertyDetail] Error incrementing view count:', error);
+                } catch (err) {
+                    console.error('[PropertyDetail] Exception incrementing view count:', err);
+                }
+            };
+            incrementView();
         }
     }, [propertyId]);
 
@@ -124,27 +156,108 @@ const PropertyDetailScreen = () => {
         isFavorited ? await removeFavorite(id) : await addFavorite(id);
     };
 
-    const handleUnlock = async () => {
-        if (isUnlocked) {
-            // Already unlocked — go to details screen
-            router.push({ pathname: '/shared-screens/UnlockedPropertyScreen', params: { id: propertyId } });
+    const handleDeleteProperty = () => {
+        Alert.alert(
+            'Delete Listing',
+            `Are you sure you want to delete "${property?.title}"? This action cannot be undone.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await deleteProperty(propertyId);
+                        router.back();
+                    }
+                },
+            ]
+        );
+    };
+
+    const handleBookInspection = async () => {
+        if (isBooked) {
+            try {
+                const { data: bookingData } = await supabase
+                    .from('inspection_bookings')
+                    .select('preferred_date, preferred_time')
+                    .eq('property_id', propertyId)
+                    .eq('renter_id', user?.id)
+                    .eq('status', 'confirmed')
+                    .limit(1)
+                    .single();
+
+                const bookingDate = bookingData ? new Date(bookingData.preferred_date) : null;
+                if (bookingData && bookingDate) {
+                    const timeParts = bookingData.preferred_time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+                    if (timeParts) {
+                        let hours = parseInt(timeParts[1]);
+                        const minutes = parseInt(timeParts[2]);
+                        const ampm = timeParts[3];
+                        if (ampm) {
+                            if (ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+                            if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+                        }
+                        bookingDate.setHours(hours);
+                        bookingDate.setMinutes(minutes);
+                    }
+                }
+
+                const dateStr = bookingData
+                    ? new Date(bookingData.preferred_date).toLocaleDateString('en-NG', { 
+                        weekday: 'long', 
+                        day: 'numeric', 
+                        month: 'short', 
+                        year: 'numeric' 
+                    })
+                    : '';
+                const timeStr = bookingData ? bookingData.preferred_time + ' WAT' : '';
+
+                const landlordName = property?.agent_id
+                    ? (property.agent?.first_name ? `${property.agent.first_name} ${property.agent.last_name || ''}`.trim() : 'Agent')
+                    : (property?.landlord?.first_name ? `${property.landlord.first_name} ${property.landlord.last_name || ''}`.trim() : 'Landlord');
+
+                router.push({
+                    pathname: '/shared-screens/BookingConfirmationScreen',
+                    params: {
+                        property_id: propertyId,
+                        date: dateStr,
+                        time: timeStr,
+                        property: property?.title || '',
+                        address: property?.location || '',
+                        landlord: landlordName,
+                        raw_date: bookingDate ? bookingDate.toISOString() : '',
+                    }
+                });
+            } catch (err) {
+                console.error('Error fetching booking details for confirmation:', err);
+                router.push({
+                    pathname: '/shared-screens/BookingConfirmationScreen',
+                    params: { property_id: propertyId }
+                });
+            }
             return;
         }
 
-        setUnlocking(true);
-        const result = await unlockProperty(propertyId);
-        setUnlocking(false);
+        router.push({
+            pathname: '/shared-screens/BookInspectionScreen',
+            params: { 
+                property_id: propertyId,
+                property_title: property?.title || ''
+            }
+        });
+    };
 
-        if (result.error === 'insufficient_credits') {
-            // Navigate to top-up
-            router.push('/shared-screens/TopUpCreditsScreen');
-            return;
-        }
-
-        if (result.unlocked) {
-            setIsUnlocked(true);
-            router.push({ pathname: '/shared-screens/UnlockedPropertyScreen', params: { id: propertyId } });
-        }
+    const handleApply = () => {
+        if (!property) return;
+        router.push({
+            pathname: '/shared-screens/ApplicationScreen',
+            params: {
+                id: propertyId,
+                title: property.title,
+                price: property.price?.toString(),
+                location: property.location,
+            },
+        });
     };
 
     const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -210,20 +323,47 @@ const PropertyDetailScreen = () => {
         },
     ] as const;
 
+    const isLand = property.type?.toLowerCase().includes('land');
+    const isSale = property.listing_purpose === 'sale';
+
+    const landFeatures = isLand ? [
+        { icon: 'resize-outline', label: `${property.land_size ?? 0} ${property.land_measurement_unit ? (property.land_measurement_unit.charAt(0).toUpperCase() + property.land_measurement_unit.slice(1)) : 'Plots'}`, iconSet: 'ion' },
+        { icon: 'map-outline', label: property.type ?? 'Land', iconSet: 'ion' },
+        {
+            icon: 'calendar-outline',
+            label: property.availability_date
+                ? new Date(property.availability_date).toLocaleDateString('en-NG', {
+                    day: 'numeric',
+                    month: 'short',
+                })
+                : 'Available Now',
+            iconSet: 'ion',
+        },
+    ] as const : [];
+
     const statusColor = property.status === 'available' ? '#00C853' : '#EF4444';
     const statusBg = property.status === 'available' ? '#E6F9F0' : '#FEE2E2';
 
     // Calculate Breakdown
     const rentAmount = property.price || 0;
-    const agencyFee = (rentAmount * (property.agency_fee_percentage || 0)) / 100;
+    const hasAgencyFee = (property.agency_fee_percentage || 0) > 0;
+    const agencyFee = hasAgencyFee ? (rentAmount * property.agency_fee_percentage) / 100 : 0;
     const cautionFee = property.caution_fee || 0;
     const legalFee = property.legal_fee || 0;
-    const totalPackage = rentAmount + agencyFee + cautionFee + legalFee;
+    const serviceChargePct = property.service_fee_percentage ?? 1.5;
+    const serviceFee = (rentAmount * serviceChargePct) / 100;
+    const totalPackage = isSale ? rentAmount : (rentAmount + agencyFee + cautionFee + legalFee);
 
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <ScrollView
-                contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.background }]}
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    { 
+                        backgroundColor: colors.background,
+                        paddingBottom: isLandlordOrAgent ? 60 : 120 
+                    }
+                ]}
                 showsVerticalScrollIndicator={false}
             >
                 {/* ── Image Carousel ─────────────────────────────────────── */}
@@ -238,13 +378,12 @@ const PropertyDetailScreen = () => {
                             showsHorizontalScrollIndicator={false}
                             onScroll={onScroll}
                             scrollEventThrottle={16}
+                            style={{ flex: 1 }}
                             renderItem={({ item, index }) => (
                                 <Image
                                     key={index}
                                     source={{
-                                        uri: getCleanUrl(item),
-                                        headers: {
-                                        }
+                                        uri: item,
                                     }}
                                     placeholder={FALLBACK_IMAGE}
                                     style={styles.mainImage}
@@ -262,16 +401,41 @@ const PropertyDetailScreen = () => {
                     )}
 
                     {/* Back Button */}
-                    <BackButton />
+                    <BackButton style={[styles.backButton, { backgroundColor: floatingButtonBg }]} color={floatingButtonIconColor} />
 
-                    {/* Favourite Button */}
-                    <TouchableOpacity style={[styles.favoriteButton, { backgroundColor: 'rgba(255,255,255,0.9)' }]} onPress={handleFavorite}>
-                        <Ionicons
-                            name={isFavorited ? 'heart' : 'heart-outline'}
-                            size={22}
-                            color={isFavorited ? '#EF4444' : '#333'}
-                        />
-                    </TouchableOpacity>
+                    {/* Favourite Button (Tenant Only) */}
+                    {!isLandlordOrAgent && (
+                        <TouchableOpacity style={[styles.favoriteButton, { backgroundColor: floatingButtonBg }]} onPress={handleFavorite}>
+                            <Ionicons
+                                name={isFavorited ? 'heart' : 'heart-outline'}
+                                size={22}
+                                color={isFavorited ? '#EF4444' : floatingButtonIconColor}
+                            />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Edit Button (Landlord/Agent Owner Only) */}
+                    {isOwner && (
+                        <TouchableOpacity 
+                            style={[styles.editButton, { backgroundColor: colors.primary, right: 16 }]} 
+                            onPress={() => router.push({
+                                pathname: '/landlord-screens/add-property',
+                                params: { id: propertyId }
+                            })}
+                        >
+                            <Ionicons name="pencil" size={18} color="#fff" />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Delete Button (Landlord Owner Only) */}
+                    {isOwner && role !== 'AGENT' && (
+                        <TouchableOpacity 
+                            style={[styles.deleteButton, { backgroundColor: '#EF4444', right: 70 }]} 
+                            onPress={handleDeleteProperty}
+                        >
+                            <Ionicons name="trash-outline" size={18} color="#fff" />
+                        </TouchableOpacity>
+                    )}
 
                     {/* Image Counter */}
                     {hasImages && images.length > 1 && (
@@ -296,7 +460,7 @@ const PropertyDetailScreen = () => {
                 </View>
 
                 {/* ── Info Section ───────────────────────────────────────── */}
-                <View style={styles.infoContainer}>
+                <View style={[styles.infoContainer, { backgroundColor: colors.background }]}>
                     {/* Title Row */}
                     <View style={styles.titleRow}>
                         <View style={{ flex: 1 }}>
@@ -322,7 +486,7 @@ const PropertyDetailScreen = () => {
                             bg={statusBg}
                         />
                         <Badge
-                            label={property.listing_purpose === 'sale' ? 'For Sale' : 'For Rent'}
+                            label={isSale ? 'For Sale' : 'For Rent'}
                             color={colors.primary}
                             bg={colors.primary + '15'}
                         />
@@ -333,26 +497,52 @@ const PropertyDetailScreen = () => {
                         />
                     </View>
 
+                    {/* Listed By Notice */}
+                    <View style={[styles.ownerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={styles.ownerAvatarWrap}>
+                            <Image 
+                                source={property.agent_id ? (property.agent?.avatar_url || FALLBACK_AVATAR) : (property.landlord?.avatar_url || FALLBACK_AVATAR)} 
+                                style={styles.ownerAvatar} 
+                            />
+                            <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
+                                <Ionicons name="checkmark" size={10} color="#fff" />
+                            </View>
+                        </View>
+                        <View style={styles.ownerInfo}>
+                            <Text style={[styles.ownerLabel, { color: colors.textSecondary }]}>Listed by</Text>
+                            <View style={styles.ownerRoleRow}>
+                                <MaterialCommunityIcons 
+                                    name={property.agent_id ? "badge-account-horizontal" : "shield-check"} 
+                                    size={14} 
+                                    color={colors.primary} 
+                                />
+                                <Text style={[styles.ownerRole, { color: colors.primary, fontWeight: '700', fontSize: 16 }]}>
+                                    {property.agent_id ? 'Verified Professional Agent' : 'Verified Direct Landlord'}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
                     {/* Price Card */}
                     <View style={[styles.priceCard, { backgroundColor: colors.card, shadowColor: colors.primary }]}>
                         <View style={{ flex: 1 }}>
                             <TouchableOpacity
                                 style={styles.priceHeader}
-                                onPress={() => setShowFees(!showFees)}
+                                onPress={() => !isSale && setShowFees(!showFees)}
                                 activeOpacity={0.7}
                             >
                                 <View>
                                     <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
-                                        {property.listing_purpose === 'rent' ? 'Total Package' : 'Price'}
+                                        {!isSale ? 'Total Package' : 'Selling Price'}
                                     </Text>
                                     <Text style={[styles.price, { color: colors.primary }]}>
                                         {formatPrice(
-                                            property.listing_purpose === 'rent' ? totalPackage : property.price,
+                                            !isSale ? totalPackage : rentAmount,
                                             property.listing_purpose
                                         )}
                                     </Text>
                                 </View>
-                                {property.listing_purpose === 'rent' && (
+                                {!isSale && (
                                     <Ionicons
                                         name={showFees ? "chevron-up" : "chevron-down"}
                                         size={20}
@@ -362,16 +552,18 @@ const PropertyDetailScreen = () => {
                                 )}
                             </TouchableOpacity>
 
-                            {showFees && property.listing_purpose === 'rent' && (
+                            {showFees && !isSale && (
                                 <View style={styles.feeBreakdown}>
                                     <View style={styles.feeItem}>
                                         <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Rent</Text>
                                         <Text style={[styles.feeValue, { color: colors.text }]}>₦{rentAmount.toLocaleString()}</Text>
                                     </View>
-                                    <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Agency Fee ({property.agency_fee_percentage}%)</Text>
-                                        <Text style={[styles.feeValue, { color: colors.text }]}>₦{agencyFee.toLocaleString()}</Text>
-                                    </View>
+                                    {hasAgencyFee && (
+                                        <View style={styles.feeItem}>
+                                            <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Agency Fee ({property.agency_fee_percentage}%)</Text>
+                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{agencyFee.toLocaleString()}</Text>
+                                        </View>
+                                    )}
                                     <View style={styles.feeItem}>
                                         <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Caution Fee</Text>
                                         <Text style={[styles.feeValue, { color: colors.text }]}>₦{cautionFee.toLocaleString()}</Text>
@@ -380,6 +572,10 @@ const PropertyDetailScreen = () => {
                                         <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Legal Fee</Text>
                                         <Text style={[styles.feeValue, { color: colors.text }]}>₦{legalFee.toLocaleString()}</Text>
                                     </View>
+                                    <View style={styles.feeItem}>
+                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Service Charge ({serviceChargePct}%)</Text>
+                                        <Text style={[styles.feeValue, { color: colors.primary, fontWeight: '700' }]}>₦{serviceFee.toLocaleString()}</Text>
+                                    </View>
                                 </View>
                             )}
                         </View>
@@ -387,9 +583,9 @@ const PropertyDetailScreen = () => {
                     </View>
 
                     {/* Features Grid */}
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Property Features</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Property Details</Text>
                     <View style={styles.featuresGrid}>
-                        {features.map((f, i) => (
+                        {(isLand ? landFeatures : features).map((f, i) => (
                             <FeatureChip
                                 key={i}
                                 icon={f.icon}
@@ -400,18 +596,36 @@ const PropertyDetailScreen = () => {
                         ))}
                     </View>
 
+                    {/* Video Section */}
+                    {property.video_url && (
+                        <>
+                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Video Tour</Text>
+                            <View style={styles.videoContainer}>
+                                <PropertyVideoPlayer videoUrl={property.video_url} />
+                            </View>
+                        </>
+                    )}
+
                     {/* Description */}
                     {property.description ? (
                         <>
                             <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
                             <View style={[styles.descriptionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                 <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>{property.description}</Text>
+                                
+                                {/* Service Charge Percentage Note */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 }}>
+                                    <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+                                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>
+                                        Service Charge: {serviceChargePct}%
+                                    </Text>
+                                </View>
                             </View>
                         </>
                     ) : null}
 
                     {/* Amenities */}
-                    {property.amenities?.length > 0 && (
+                    {!isLand && property.amenities?.length > 0 && (
                         <>
                             <Text style={[styles.sectionTitle, { color: colors.text }]}>Amenities</Text>
                             <View style={styles.amenitiesGrid}>
@@ -422,55 +636,26 @@ const PropertyDetailScreen = () => {
                         </>
                     )}
 
-                    {/* Unlock / View Landlord Details */}
-                    <View style={[styles.unlockCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={styles.unlockIconWrap}>
-                            <Ionicons
-                                name={isUnlocked ? 'lock-open-outline' : 'lock-closed-outline'}
-                                size={28}
-                                color={isUnlocked ? '#00C853' : colors.primary}
-                            />
-                        </View>
-                        <Text style={[styles.unlockTitle, { color: colors.text }]}>
-                            {isUnlocked ? 'Landlord Details Unlocked' : 'Unlock Landlord Details'}
-                        </Text>
-                        <Text style={[styles.unlockSubtitle, { color: colors.textSecondary }]}>
-                            {isUnlocked
-                                ? 'Tap below to view landlord contact info, message them, or apply.'
-                                : 'Spend 1 credit (₦666) to view the landlord\'s contact details, message them, and apply for this property.'}
-                        </Text>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.unlockButton,
-                                { backgroundColor: isUnlocked ? '#00C853' : colors.primary },
-                            ]}
-                            onPress={handleUnlock}
-                            disabled={unlocking}
-                            activeOpacity={0.85}
-                        >
-                            {unlocking ? (
-                                <ActivityIndicator color="#fff" />
-                            ) : (
-                                <>
-                                    <Ionicons
-                                        name={isUnlocked ? 'eye-outline' : 'lock-open-outline'}
-                                        size={18}
-                                        color="#fff"
-                                    />
-                                    <Text style={styles.unlockButtonText}>
-                                        {isUnlocked ? 'View Landlord Details' : 'Unlock for ₦666'}
-                                    </Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-
-                        {!isUnlocked && (
-                            <Text style={[styles.unlockCreditsNote, { color: colors.textSecondary }]}>
-                                {creditsLoading ? '...' : `${credits} credit${credits !== 1 ? 's' : ''} remaining`}
+                    {/* Book Inspection Card (Hidden for Landlords & Agents) */}
+                    {!isLandlordOrAgent && (
+                        <View style={[styles.unlockCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={styles.unlockIconWrap}>
+                                <Ionicons
+                                    name={isBooked ? 'calendar' : 'calendar-outline'}
+                                    size={28}
+                                    color={isBooked ? '#00C853' : colors.primary}
+                                />
+                            </View>
+                            <Text style={[styles.unlockTitle, { color: colors.text }]}>
+                                {isBooked ? 'Inspection Booked' : 'Book an Inspection'}
                             </Text>
-                        )}
-                    </View>
+                            <Text style={[styles.unlockSubtitle, { color: colors.textSecondary }]}>
+                                {isBooked
+                                    ? 'Your inspection has been booked! Check your WhatsApp/Email for landlord details.'
+                                    : 'Use 1 service unit to book a physical inspection. You will receive the landlord\'s direct contact and exact address via WhatsApp and Email.'}
+                            </Text>
+                        </View>
+                    )}
 
                     {/* Gallery */}
                     {images.length > 1 && (
@@ -519,7 +704,7 @@ const PropertyDetailScreen = () => {
                                     : '—'}
                             </Text>
                         </View>
-                        {property.billing_period && property.listing_purpose !== 'sale' && (
+                        {property.billing_period && !isSale && (
                             <View style={styles.metaRow}>
                                 <Ionicons name="refresh-outline" size={16} color="#94A3B8" />
                                 <Text style={styles.metaText}>
@@ -530,6 +715,35 @@ const PropertyDetailScreen = () => {
                     </View>
                 </View>
             </ScrollView>
+
+            {/* Sticky Bottom Actions Bar (Hidden for Landlords & Agents) */}
+            {!isLandlordOrAgent && (
+                <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+                    {isBooked && (
+                        <TouchableOpacity
+                            style={styles.applyButton}
+                            onPress={handleApply}
+                            activeOpacity={0.85}
+                        >
+                            <Text style={styles.buttonText}>Apply To Rent</Text>
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                        style={styles.bookActionBtn}
+                        onPress={handleBookInspection}
+                        disabled={booking}
+                        activeOpacity={0.85}
+                    >
+                        {booking ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.buttonText}>
+                                {isBooked ? 'View Booking Status' : 'Book Inspection(₦666)'}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            )}
         </ScreenWrapper>
     );
 };
@@ -538,6 +752,56 @@ const PropertyDetailScreen = () => {
 
 const styles = StyleSheet.create({
     scrollContent: { paddingBottom: 60 },
+
+    bottomActions: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        gap: 12,
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        paddingBottom: Platform.OS === 'ios' ? 36 : 16,
+        borderTopWidth: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 10,
+    },
+    applyButton: {
+        flex: 1,
+        backgroundColor: '#F49E5E',
+        height: 52,
+        borderRadius: 26,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    bookActionBtn: {
+        flex: 1,
+        backgroundColor: '#F49E5E',
+        height: 52,
+        borderRadius: 26,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    buttonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
 
     // ── States ────────────────────────────────────────────────────────────────
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },
@@ -554,11 +818,11 @@ const styles = StyleSheet.create({
     retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
     // ── Image ─────────────────────────────────────────────────────────────────
-    imageContainer: { width, height: 360, position: 'relative', backgroundColor: '#F1F5F9' },
+    imageContainer: { width, height: 360, position: 'relative' },
     mainImage: { width, height: 360 },
     backButton: {
         position: 'absolute',
-        top: 20,
+        top: 40,
         left: 16,
         width: 42,
         height: 42,
@@ -573,7 +837,7 @@ const styles = StyleSheet.create({
     },
     favoriteButton: {
         position: 'absolute',
-        top: 20,
+        top: 40,
         right: 16,
         width: 42,
         height: 42,
@@ -586,9 +850,35 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
         elevation: 4,
     },
+    editButton: {
+        position: 'absolute',
+        top: 40,
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+    },
+    deleteButton: {
+        position: 'absolute',
+        top: 40,
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+    },
     imageCounter: {
         position: 'absolute',
-        top: 20,
+        top: 40,
         alignSelf: 'center',
         backgroundColor: 'rgba(0,0,0,0.5)',
         paddingHorizontal: 12,
@@ -609,7 +899,13 @@ const styles = StyleSheet.create({
     // ── Info ──────────────────────────────────────────────────────────────────
     infoContainer: {
         paddingHorizontal: 20,
-        paddingTop: 24, gap: 20, borderTopEndRadius: 20, borderTopStartRadius: 20
+        paddingTop: 24,
+        gap: 20,
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        marginTop: -30,
+        zIndex: 10,
+        elevation: 10,
     },
 
 
@@ -682,6 +978,74 @@ const styles = StyleSheet.create({
         borderWidth: 1,
     },
     descriptionText: { fontSize: 14, lineHeight: 22 },
+
+    // ── Owner Notice ─────────────────────────────────────────────────────────
+    ownerCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        marginTop: 4,
+    },
+    ownerAvatarWrap: {
+        position: 'relative',
+        marginRight: 16,
+    },
+    ownerAvatar: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+    },
+    verifiedBadge: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        borderWidth: 2,
+        borderColor: '#fff',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    ownerInfo: {
+        flex: 1,
+    },
+    ownerLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 2,
+    },
+    ownerName: {
+        fontSize: 16,
+        fontWeight: '800',
+    },
+    ownerRoleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 2,
+    },
+    ownerRole: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+
+    // ── Video ────────────────────────────────────────────────────────────────
+    videoContainer: {
+        width: '100%',
+        height: 220,
+        borderRadius: 20,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+    },
+    video: {
+        width: '100%',
+        height: '100%',
+    },
 
     // ── Amenities ─────────────────────────────────────────────────────────────
     amenitiesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

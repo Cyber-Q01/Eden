@@ -1,37 +1,42 @@
 {
   "expo": {
-    "name": "EdenHome",
+    "name": "Eden",
     "slug": "eden-home",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/EdenIcon.png",
-    "scheme": "edenhome",
+    "icon": "./assets/android/res/mipmap-xxxhdpi/ic_launcher.png",
+    "scheme": "eden",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "notification": {
+      "icon": "./assets/android/res/mipmap-xxxhdpi/ic_launcher.png",
+      "color": "#407BFF"
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/EdenIcon.png",
-        "backgroundImage": "./assets/images/EdenIcon.png",
-        "monochromeImage": "./assets/images/EdenIcon.png"
+        "foregroundImage": "./assets/android/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+        "backgroundImage": "./assets/android/res/mipmap-xxxhdpi/ic_launcher_background.png",
+        "monochromeImage": "./assets/android/res/mipmap-xxxhdpi/ic_launcher_monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.edenhome.mobile"
+      "package": "com.eden.mobile",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/EdenIcon.png"
+      "favicon": "./assets/images/eicon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/EdenIcon.png",
+          "image": "./assets/images/eicon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -40,7 +45,8 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

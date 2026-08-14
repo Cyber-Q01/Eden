@@ -8,7 +8,7 @@
  */
 export function withTimeout<T>(
     promise: Promise<T>,
-    timeoutMs: number = 15000,
+    timeoutMs: number = 20000,
     errorMessage: string = 'Connection timed out. Please check your internet and try again.'
 ): Promise<T> {
     return Promise.race([

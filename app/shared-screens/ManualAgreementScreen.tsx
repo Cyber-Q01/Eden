@@ -1,5 +1,6 @@
 // screens/ManualAgreementScreen.tsx
 
+import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';

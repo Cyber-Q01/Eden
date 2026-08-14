@@ -115,6 +115,25 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── Notify User ────────────────────────────────────────────────────────
+    try {
+      const { error: notifError } = await adminClient.from('notifications').insert({
+        user_id: user.id,
+        type: 'payment_received',
+        title: '💰 Credits Added!',
+        message: `Your balance has been topped up with ${unlocks} service units.`,
+        data: {
+          units: unlocks,
+          reference: reference,
+          type: 'credit_topup',
+          screen: 'Profile' 
+        }
+      });
+      if (notifError) console.error('[Topup Notification Error]:', notifError);
+    } catch (notifErr) {
+      console.error('Error creating topup notification exception:', notifErr);
+    }
+
     return new Response(JSON.stringify({
       balance: newBalance,
       unlocks_added: unlocks,

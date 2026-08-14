@@ -1,11 +1,15 @@
-// hooks/useNotifications.ts
-
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { callEdgeFunction } from '../lib/api';
 import { handleError } from '../lib/errorHandler';
 import { supabase } from '../lib/supabase';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type NotificationType =
   | 'new_application'
@@ -30,31 +34,32 @@ export type Notification = {
 
 export const useNotifications = () => {
   const { user } = useAuth();
+  const router = useRouter();
   const { showError } = useToast();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const queryClient = useQueryClient();
 
   // ── Fetch notifications ──────────────────────────────────────────────────
-  const fetchNotifications = async (limit: number = 50) => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const data = await callEdgeFunction<Notification[]>(
-        'notifications',
-        'POST',
-        { action: 'list', limit }
-      );
-      setNotifications(data ?? []);
-      const unread = (data ?? []).filter(n => !n.read).length;
-      setUnreadCount(unread);
-    } catch (e) {
-      const err = await handleError(e);
-      console.error('Error fetching notifications:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: notifications = [], isLoading: loading, refetch: fetchNotifications } = useQuery({
+    queryKey: ['notifications', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      try {
+        const data = await callEdgeFunction<Notification[]>(
+          'notifications',
+          'POST',
+          { action: 'list', limit: 50 }
+        );
+        return data ?? [];
+      } catch (e) {
+        const err = await handleError(e);
+        console.error('Error fetching notifications:', err);
+        return [];
+      }
+    },
+    enabled: !!user
+  });
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   // ── Mark as read ────────────────────────────────────────────────────────
   const markAsRead = async (notificationId: string) => {
@@ -63,10 +68,9 @@ export const useNotifications = () => {
         action: 'mark_as_read',
         notification_id: notificationId
       });
-      setNotifications(prev =>
-        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+      queryClient.setQueryData(['notifications', user?.id], (old: Notification[] = []) => 
+        old.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
-      setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (e) {
       const err = await handleError(e);
       showError(err);
@@ -77,8 +81,9 @@ export const useNotifications = () => {
   const markAllAsRead = async () => {
     try {
       await callEdgeFunction('notifications', 'POST', { action: 'mark_all_as_read' });
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
+      queryClient.setQueryData(['notifications', user?.id], (old: Notification[] = []) => 
+        old.map(n => ({ ...n, read: true }))
+      );
     } catch (e) {
       const err = await handleError(e);
       showError(err);
@@ -92,48 +97,41 @@ export const useNotifications = () => {
         action: 'delete',
         notification_id: notificationId
       });
-      setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      // Decrement unread count if the deleted notification was unread
-      const deletedNotification = notifications.find(n => n.id === notificationId);
-      if (deletedNotification && !deletedNotification.read) {
-        setUnreadCount(prev => Math.max(0, prev - 1));
-      }
+      queryClient.setQueryData(['notifications', user?.id], (old: Notification[] = []) => 
+        old.filter(n => n.id !== notificationId)
+      );
     } catch (e) {
       const err = await handleError(e);
       showError(err);
     }
   };
 
-  // ── Initial fetch on mount ───────────────────────────────────────────────
-  useEffect(() => {
-    if (user) fetchNotifications();
-  }, [user]);
-
   // ── Real-time subscription to new notifications ──────────────────────────
   useEffect(() => {
     if (!user) return;
 
-    // Subscribe to INSERT events for this user
-    // Append a random string to avoid channel collisions if the hook is used in multiple components simultaneously
     const channelName = `notifications:${user.id}-${Math.random().toString(36).substring(7)}`;
     const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          const newNotification = payload.new as Notification;
-          // Add to top of list
-          setNotifications(prev => [newNotification, ...prev]);
-          // Increment unread count if not read
-          if (!newNotification.read) {
-            setUnreadCount(prev => prev + 1);
-          }
+          queryClient.setQueryData(['notifications', user.id], (old: Notification[] = []) => {
+            if (payload.eventType === 'INSERT') {
+              return [payload.new as Notification, ...old];
+            } else if (payload.eventType === 'UPDATE') {
+              return old.map(n => n.id === payload.new.id ? payload.new as Notification : n);
+            } else if (payload.eventType === 'DELETE') {
+              return old.filter(n => n.id !== payload.old.id);
+            }
+            return old;
+          });
         }
       )
       .subscribe();
@@ -141,7 +139,113 @@ export const useNotifications = () => {
     return () => {
       supabase.removeChannel(channel);
     };
+  }, [user, queryClient]);
+
+  // ── Handle Tapping Notifications (Background/Closed State) ───────────────
+  useEffect(() => {
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (data?.screen) {
+        if (data.screen === 'InspectionDetails' || data.screen === 'LandlordInspections') {
+          router.push('/shared-screens/InspectionsScreen');
+        } else if (data.screen === 'LandlordApplications' || data.screen === 'MyApplications') {
+          router.push('/shared-screens/ApplicationsScreen');
+        } else if (data.screen === 'Profile') {
+          router.push('/(tabs)/profile');
+        } else if (data.screen === 'Chat' && data.conversation_id) {
+          router.push(`/chat/${data.conversation_id}`);
+        }
+      }
+    });
+
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) {
+        const data = response.notification.request.content.data;
+        if (data?.screen === 'InspectionDetails' || data.screen === 'LandlordInspections') {
+          router.push('/shared-screens/InspectionsScreen');
+        } else if (data.screen === 'LandlordApplications' || data.screen === 'MyApplications') {
+          router.push('/shared-screens/ApplicationsScreen');
+        } else if (data.screen === 'Profile') {
+          router.push('/(tabs)/profile');
+        }
+      }
+    });
+
+    return () => {
+      responseSubscription.remove();
+    };
+  }, [router]);
+
+  // ── Push Registration ────────────────────────────────────────────────────
+  const registerForPushNotificationsAsync = async () => {
+    if (!Device.isDevice) {
+      console.log('Must use physical device for Push Notifications');
+      return;
+    }
+
+    if (user) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('push_notifications_enabled')
+        .eq('id', user.id)
+        .single();
+      
+      if (userData && userData.push_notifications_enabled === false) {
+        console.log('Push notifications are disabled in settings');
+        return;
+      }
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      console.log('Failed to get push token for push notification!');
+      return;
+    }
+
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    if (!projectId) {
+      console.warn('Project ID not found in expo config');
+    }
+
+    try {
+      const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      console.log('Expo Push Token:', token);
+
+      if (user) {
+        const { error } = await supabase
+          .from('users')
+          .update({ push_token: token })
+          .eq('id', user.id);
+        
+        if (error) {
+          console.error('Error saving push token to Supabase:', error);
+        }
+      }
+      return token;
+    } catch (e) {
+      console.error('Error getting push token:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      registerForPushNotificationsAsync();
+    }
   }, [user]);
+
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
 
   return {
     notifications,
@@ -151,5 +255,6 @@ export const useNotifications = () => {
     markAsRead,
     markAllAsRead,
     deleteNotification,
+    registerForPushNotificationsAsync,
   };
 };

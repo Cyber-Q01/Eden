@@ -15,9 +15,10 @@ type Props = {
     form: BiodataForm;
     updateForm: (key: keyof BiodataForm, value: string) => void;
     closeModal: (key: ModalKeys) => void;
+    bankOptions: any[];
 };
 
-const BiodataModals = ({ modals, form, updateForm, closeModal }: Props) => (
+const BiodataModals = ({ modals, form, updateForm, closeModal, bankOptions }: Props) => (
     <>
         <BottomSheetPicker
             visible={modals.gender}
@@ -62,9 +63,15 @@ const BiodataModals = ({ modals, form, updateForm, closeModal }: Props) => (
         <BottomSheetPicker
             visible={modals.bank}
             title="Select Bank"
-            options={BANK_OPTIONS}
-            selectedValue={form.bank_name}
-            onSelect={v => updateForm('bank_name', v)}
+            options={bankOptions}
+            selectedValue={form.bank_code || ''}
+            onSelect={code => {
+                const selected = bankOptions.find(b => b.value === code);
+                if (selected) {
+                    updateForm('bank_name', selected.label);
+                    updateForm('bank_code', selected.value);
+                }
+            }}
             onClose={() => closeModal('bank')}
         />
     </>

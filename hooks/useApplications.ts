@@ -1,11 +1,11 @@
 // hooks/useApplications.ts
-
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { callEdgeFunction } from '../lib/api';
 import { handleError } from '../lib/errorHandler';
 import { supabase } from '../lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type ApplicationStatus = 'pending' | 'accepted' | 'declined';
 
@@ -47,106 +47,98 @@ export type Application = {
   };
 };
 
-// ── Shared: view single application details ──────────────────────────────
+const EMPTY_ARRAY: any[] = [];
 
 export const useApplicationDetails = (applicationId: string | null) => {
   const { user } = useAuth();
   const { showError } = useToast();
-  const [application, setApplication] = useState<Application | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  const { data: application, isLoading: loading, refetch } = useQuery({
+    queryKey: ['application', applicationId],
+    queryFn: async () => {
+      if (!user || !applicationId) return null;
+      try {
+        const { data: appData, error: fetchError } = await supabase
+          .from('property_applications')
+          .select('*')
+          .eq('id', applicationId)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        if (appData) {
+          const { data: propData } = await supabase.from('properties').select('*').eq('id', appData.property_id).single();
+          appData.property = propData;
+
+          const [renterRes, ownerRes] = await Promise.all([
+            supabase.functions.invoke('get-user-profile', { body: { userId: appData.renter_id } }),
+            supabase.functions.invoke('get-user-profile', { body: { userId: appData.owner_id } })
+          ]);
+
+          appData.renter = renterRes.data;
+          appData.owner = ownerRes.data;
+          return appData as Application;
+        }
+        return null;
+      } catch (e) {
+        const err = await handleError(e);
+        showError(err);
+        throw e;
+      }
+    },
+    enabled: !!(user && applicationId)
+  });
 
   const fetchDetails = async () => {
-    if (!user || !applicationId) return;
-    setLoading(true);
-    try {
-      const { data: appData, error: fetchError } = await supabase
-        .from('property_applications')
-        .select('*')
-        .eq('id', applicationId)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      if (appData) {
-        // Fetch related property normally (usually has public RLS)
-        const { data: propData } = await supabase.from('properties').select('*').eq('id', appData.property_id).single();
-        appData.property = propData;
-
-        // Fetch profiles via Edge Function to bypass RLS restrictions
-        const [renterRes, ownerRes] = await Promise.all([
-          supabase.functions.invoke('get-user-profile', { body: { userId: appData.renter_id } }),
-          supabase.functions.invoke('get-user-profile', { body: { userId: appData.owner_id } })
-        ]);
-
-        appData.renter = renterRes.data;
-        appData.owner = ownerRes.data;
-        
-        setApplication(appData);
-      } else {
-        setApplication(null);
-      }
-    } catch (e) {
-      const err = await handleError(e);
-      showError(err);
-    } finally {
-      setLoading(false);
-    }
+    const res = await refetch();
+    return res.data;
   };
-
-  useEffect(() => {
-    fetchDetails();
-  }, [applicationId, user]);
 
   return { application, loading, refetch: fetchDetails };
 };
 
-// ── Tenant: view own applications ──────────────────────────────────────────
-
 export const useMyApplications = () => {
   const { user, role } = useAuth();
   const { showError } = useToast();
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: applications, isLoading: loading, isError: error, refetch } = useQuery({
+    queryKey: ['my-applications', user?.id],
+    queryFn: async () => {
+      if (!user || role !== 'TENANT') return [];
+      try {
+        const data = await callEdgeFunction<Application[]>(
+          'submit-application',
+          'POST',
+          { role: 'tenant', action: 'list' }
+        );
+        return data ?? [];
+      } catch (e) {
+        const err = await handleError(e);
+        showError(err);
+        throw e;
+      }
+    },
+    enabled: !!(user && role === 'TENANT')
+  });
 
   const fetchApplications = async () => {
-    if (!user || role !== 'TENANT') return;
-    setLoading(true);
-    setError(false);
-    try {
-      const data = await callEdgeFunction<Application[]>(
-        'submit-application',
-        'POST',
-        { role: 'tenant', action: 'list' }
-      );
-      setApplications(data ?? []);
-    } catch (e) {
-      setError(true);
-      const err = await handleError(e);
-      showError(err);
-    } finally {
-      setLoading(false);
-    }
+    const res = await refetch();
+    return res.data ?? [];
   };
-
-  useEffect(() => {
-    fetchApplications();
-  }, [user]);
-
-  // hooks/useApplications.ts
 
   const submitApplication = async (
     propertyId: string,
     moveInDate: string,
     message: string
-  ): Promise<{ error: string | null }> => {  // ✅ Removed requiresMembership
+  ): Promise<{ error: string | null }> => {
     try {
       await callEdgeFunction('submit-application', 'POST', {
         property_id: propertyId,
         move_in_date: moveInDate,
         message,
       });
-      await fetchApplications();
+      queryClient.invalidateQueries({ queryKey: ['my-applications'] });
       return { error: null };
     } catch (e: any) {
       const err = await handleError(e);
@@ -156,7 +148,7 @@ export const useMyApplications = () => {
   };
 
   return {
-    applications,
+    applications: applications ?? EMPTY_ARRAY,
     loading,
     error,
     submitApplication,
@@ -164,39 +156,36 @@ export const useMyApplications = () => {
   };
 };
 
-// ── Landlord: view applications on their properties ───────────────────────────
-
 export const useLandlordApplications = () => {
   const { user, role } = useAuth();
   const { showError, showSuccess } = useToast();
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [responding, setResponding] = useState(false);
-  const [error, setError] = useState(false);
+
+  const { data: applications, isLoading: loading, isError: error, refetch } = useQuery({
+    queryKey: ['landlord-applications', user?.id],
+    queryFn: async () => {
+      if (!user || role !== 'LANDLORD') return [];
+      try {
+        const data = await callEdgeFunction<Application[]>(
+          'submit-application',
+          'POST',
+          { role: 'landlord', action: 'list' }
+        );
+        return data ?? [];
+      } catch (e) {
+        const err = await handleError(e);
+        showError(err);
+        throw e;
+      }
+    },
+    enabled: !!(user && role === 'LANDLORD')
+  });
 
   const fetchApplications = async () => {
-    if (!user || role !== 'LANDLORD') return;
-    setLoading(true);
-    setError(false);
-    try {
-      const data = await callEdgeFunction<Application[]>(
-        'submit-application',
-        'POST',
-        { role: 'landlord', action: 'list' }
-      );
-      setApplications(data ?? []);
-    } catch (e) {
-      setError(true);
-      const err = await handleError(e);
-      showError(err);
-    } finally {
-      setLoading(false);
-    }
+    const res = await refetch();
+    return res.data ?? [];
   };
-
-  useEffect(() => {
-    fetchApplications();
-  }, [user]);
 
   const respondToApplication = async (
     applicationId: string,
@@ -217,9 +206,9 @@ export const useLandlordApplications = () => {
           ? 'Application accepted! The tenant can now pay.'
           : 'Application declined.'
       );
-      await fetchApplications();
+      queryClient.invalidateQueries({ queryKey: ['landlord-applications'] });
       return { error: null, rental_reference: data?.rental_reference };
-    } catch (e) {
+    } catch (e: any) {
       const err = await handleError(e);
       showError(err);
       return { error: err.message };
@@ -229,7 +218,7 @@ export const useLandlordApplications = () => {
   };
 
   return {
-    applications,
+    applications: applications ?? EMPTY_ARRAY,
     loading,
     responding,
     error,

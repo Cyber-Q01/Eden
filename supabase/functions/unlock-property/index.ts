@@ -144,9 +144,22 @@ Deno.serve(async (req) => {
 
 
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message }), {
+    console.error('[Unlock-Property] Error:', e);
+    
+    let userMessage = e.message || 'Could not unlock property. Please try again.';
+    let statusCode = 500;
+
+    if (e.message === 'Unauthorized') {
+      userMessage = 'Please sign in to unlock this property.';
+      statusCode = 401;
+    } else if (e.message?.includes('insufficient_credits')) {
+      userMessage = 'You do not have enough units to unlock this property.';
+      statusCode = 402;
+    }
+
+    return new Response(JSON.stringify({ error: userMessage }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
+      status: statusCode,
     });
   }
 });

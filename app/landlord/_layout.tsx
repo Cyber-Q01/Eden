@@ -4,11 +4,13 @@ import { Image, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BiodataGuard from '@/components/BiodataGuard';
 import RoleGuard from '@/components/RoleGuard';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 
 export default function LandlordLayout() {
     const insets = useSafeAreaInsets();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    const { role } = useAuth();
 
     return (
         <RoleGuard allowedRole="LANDLORD">
@@ -23,7 +25,10 @@ export default function LandlordLayout() {
                             paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
                             marginBottom: Platform.OS === 'ios' ? 0 : 10,
                             backgroundColor: colors.tabBar,
-                            borderTopColor: colors.border,
+                            borderTopColor: isDark ? 'transparent' : colors.border,
+                            borderTopWidth: isDark ? 0 : 1,
+                            elevation: isDark ? 0 : 10,
+                            shadowOpacity: isDark ? 0 : 0.05,
                         }
                     ],
                     tabBarActiveTintColor: colors.primary,
@@ -61,21 +66,23 @@ export default function LandlordLayout() {
                         ),
                     }}
                 />
-                <Tabs.Screen
-                    name="chat"
-                    options={{
-                        title: 'Chat',
-                        tabBarIcon: ({ color }) => (
-                            <View style={styles.iconContainer}>
-                                <Image
-                                    source={require('../../assets/icon/tab/chat.png')}
-                                    style={[styles.icon, { tintColor: color }]}
-                                    resizeMode="contain"
-                                />
-                            </View>
-                        ),
-                    }}
-                />
+                {role !== 'AGENT' && (
+                    <Tabs.Screen
+                        name="chat"
+                        options={{
+                            title: 'Chat',
+                            tabBarIcon: ({ color }) => (
+                                <View style={styles.iconContainer}>
+                                    <Image
+                                        source={require('../../assets/icon/tab/chat.png')}
+                                        style={[styles.icon, { tintColor: color }]}
+                                        resizeMode="contain"
+                                    />
+                                </View>
+                            ),
+                        }}
+                    />
+                )}
                 <Tabs.Screen
                     name="profile"
                     options={{

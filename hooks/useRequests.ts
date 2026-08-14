@@ -6,6 +6,7 @@ import { useToast } from '../components/Toast';
 import { callEdgeFunction } from '../lib/api';
 import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
+import { useQueryClient } from '@tanstack/react-query';
 
 // ─── Upload photos to Supabase storage (stays client-side) ─────────────────
 const uploadRequestPhotos = async (uris: string[], userId: string) => {
@@ -32,6 +33,7 @@ export const useRequests = () => {
     const { user } = useAuth();
     const { showError, showSuccess } = useToast();
     const [loading, setLoading] = useState(false);
+    const queryClient = useQueryClient();
 
     const submitMaintenanceRequest = async (category: string, description: string, photoUris: string[]) => {
         if (!user) return { error: 'Not authenticated' };
@@ -45,6 +47,7 @@ export const useRequests = () => {
                 photos,
             });
             showSuccess('Maintenance request submitted successfully');
+            queryClient.invalidateQueries({ queryKey: ['requests', 'maintenance'] });
             return { error: null };
         } catch (e) {
             const err = await handleError(e);
@@ -67,6 +70,7 @@ export const useRequests = () => {
                 photos,
             });
             showSuccess('Complaint submitted successfully');
+            queryClient.invalidateQueries({ queryKey: ['requests', 'complaint'] });
             return { error: null };
         } catch (e) {
             const err = await handleError(e);
@@ -77,5 +81,51 @@ export const useRequests = () => {
         }
     };
 
-    return { loading, submitMaintenanceRequest, submitComplaintRequest };
+    const fetchMaintenanceRequests = async () => {
+        if (!user) return [];
+        setLoading(true);
+        try {
+            return await queryClient.fetchQuery({
+                queryKey: ['requests', 'maintenance', user.id],
+                queryFn: async () => {
+                    const data = await callEdgeFunction('requests', 'GET', null, { type: 'maintenance' });
+                    return data || [];
+                }
+            });
+        } catch (e) {
+            const err = await handleError(e);
+            showError(err);
+            return [];
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchComplaintRequests = async () => {
+        if (!user) return [];
+        setLoading(true);
+        try {
+            return await queryClient.fetchQuery({
+                queryKey: ['requests', 'complaint', user.id],
+                queryFn: async () => {
+                    const data = await callEdgeFunction('requests', 'GET', null, { type: 'complaint' });
+                    return data || [];
+                }
+            });
+        } catch (e) {
+            const err = await handleError(e);
+            showError(err);
+            return [];
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { 
+        loading, 
+        submitMaintenanceRequest, 
+        submitComplaintRequest, 
+        fetchMaintenanceRequests, 
+        fetchComplaintRequests 
+    };
 };

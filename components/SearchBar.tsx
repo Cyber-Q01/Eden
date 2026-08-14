@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import ThemedTextInput from './ThemedTextInput';
 
@@ -13,7 +13,7 @@ interface SearchBarProps {
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({
-    placeholder = "Search...",
+    placeholder = "Search by location, price, or type",
     onSearch,
     onFilterPress,
     showFilter = true,
@@ -27,36 +27,30 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 containerStyle={styles.inputWrapper}
                 style={styles.input}
                 leftIcon={<Ionicons name="search-outline" size={20} color={colors.textSecondary} style={styles.icon} />}
+                rightIcon={showFilter && onFilterPress ? (
+                    <TouchableOpacity onPress={onFilterPress} activeOpacity={0.7} style={styles.filterButtonInline}>
+                        <Ionicons name="options-outline" size={22} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                ) : undefined}
                 onChangeText={onSearch}
             />
-            {showFilter && (
-                <TouchableOpacity style={[styles.filterButton, { backgroundColor: colors.card }]} onPress={onFilterPress}>
-                    <Ionicons name="options-outline" size={24} color={colors.textSecondary} />
-                </TouchableOpacity>
-            )}
         </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
-        flexDirection: 'row',
-        gap: 12,
         marginBottom: 20,
+        width: '100%',
     },
     inputWrapper: {
-        flex: 1,
         height: 56,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
+        borderRadius: 16,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 2,
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 1,
     },
     icon: {
         marginRight: 10,
@@ -64,21 +58,12 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         fontSize: 14,
-        color: '#333',
         height: '100%',
     },
-    filterButton: {
-        width: 56,
-        height: 56,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
+    filterButtonInline: {
+        padding: 4,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 2,
     },
 });
 

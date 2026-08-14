@@ -12,41 +12,35 @@ type Props = {
 };
 
 const ICON_CONFIG: Record<NotificationType, { icon: string; color: string; bgColor: string }> = {
-  new_application: { icon: 'person-add-outline', color: '#3b82f6', bgColor: '#3b82f615' },
-  application_accepted: { icon: 'checkmark-circle-outline', color: '#22c55e', bgColor: '#22c55e15' },
-  application_declined: { icon: 'close-circle-outline', color: '#ef4444', bgColor: '#ef444415' },
-  payment_received: { icon: 'cash-outline', color: '#f59e0b', bgColor: '#f59e0b15' },
-  rental_confirmed: { icon: 'home-outline', color: '#8b5cf6', bgColor: '#8b5cf615' },
-  agreement_signed: { icon: 'document-outline', color: '#06b6d4', bgColor: '#06b6d415' },
-  system: { icon: 'notifications-outline', color: '#6b7280', bgColor: '#6b728015' },
+  new_application: { icon: 'document-text-outline', color: '#EF4444', bgColor: '#FEE2E2' },
+  application_accepted: { icon: 'checkmark-circle-outline', color: '#10B981', bgColor: '#D1FAE5' },
+  application_declined: { icon: 'close-circle-outline', color: '#EF4444', bgColor: '#FEE2E2' },
+  payment_received: { icon: 'card-outline', color: '#F59E0B', bgColor: '#FEF3C7' },
+  rental_confirmed: { icon: 'home-outline', color: '#3B82F6', bgColor: '#DBEAFE' },
+  agreement_signed: { icon: 'pencil-outline', color: '#8B5CF6', bgColor: '#EDE9FE' },
+  system: { icon: 'calendar-outline', color: '#10B981', bgColor: '#D1FAE5' },
 };
 
 const formatTime = (dateStr: string) => {
   const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props) => {
-  const { colors } = useTheme();
-  const config = ICON_CONFIG[notification.type];
+  const { colors, isDark } = useTheme();
+  const config = ICON_CONFIG[notification.type] || ICON_CONFIG.system;
+
+  const isApplication = notification.type === 'new_application';
+  // In dark mode, soften the icon background so it doesn't clash
+  const iconBg = isDark ? config.color + '28' : config.bgColor;
 
   return (
     <TouchableOpacity
       style={[
         styles.container,
         {
-          backgroundColor: notification.read ? colors.background : colors.card,
-          borderColor: colors.border,
+          backgroundColor: colors.card,
+          borderBottomColor: colors.border,
         },
       ]}
       onPress={() => {
@@ -59,10 +53,10 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
       <View
         style={[
           styles.iconContainer,
-          { backgroundColor: config.bgColor },
+          { backgroundColor: iconBg },
         ]}
       >
-        <Ionicons name={config.icon as any} size={18} color={config.color} />
+        <Ionicons name={config.icon as any} size={20} color={config.color} />
       </View>
 
       {/* Content */}
@@ -80,9 +74,9 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
           >
             {notification.title}
           </Text>
-          <Text style={[styles.time, { color: colors.textSecondary }]}>
-            {formatTime(notification.created_at)}
-          </Text>
+          {!notification.read && (
+            <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
+          )}
         </View>
 
         <Text
@@ -92,23 +86,19 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
           {notification.message}
         </Text>
 
-        {/* Unread indicator */}
-        {!notification.read && (
-          <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
+        <Text style={[styles.time, { color: colors.textSecondary + 'AA' }]}>
+          {formatTime(notification.created_at)}
+        </Text>
+
+        {isApplication && !notification.read && (
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={() => onPress(notification)}
+          >
+            <Text style={styles.actionButtonText}>Review App</Text>
+          </TouchableOpacity>
         )}
       </View>
-
-      {/* Delete button */}
-      <TouchableOpacity
-        style={styles.deleteBtn}
-        onPress={(e) => {
-          e.stopPropagation();
-          onDelete(notification.id);
-        }}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Ionicons name="close" size={18} color={colors.textSecondary} />
-      </TouchableOpacity>
     </TouchableOpacity>
   );
 };
@@ -116,19 +106,15 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
@@ -138,12 +124,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
   },
-  title: { fontSize: 14, flex: 1 },
-  time: { fontSize: 11, flexShrink: 0 },
-  message: { fontSize: 12, lineHeight: 16 },
-  unreadDot: { width: 6, height: 6, borderRadius: 3, marginTop: 2 },
+  title: { fontSize: 15 },
+  time: { fontSize: 12, marginTop: 2 },
+  message: { fontSize: 13, lineHeight: 18 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4 },
+  actionButton: {
+    backgroundColor: '#1D4ED8',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   deleteBtn: { padding: 4 },
 });
 

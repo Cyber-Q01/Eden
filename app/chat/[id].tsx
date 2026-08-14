@@ -1,4 +1,4 @@
-import { callEdgeFunction } from '../../lib/api';
+import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -8,34 +8,42 @@ import {
     Keyboard,
     KeyboardAvoidingView,
     Platform,
-    SafeAreaView,
+    StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
     TouchableWithoutFeedback,
-    View,
+    View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ThemedTextInput from '../../components/ThemedTextInput';
-import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useMessages } from '../../hooks/useChat';
-import { supabase } from '../../lib/supabase';
+import { callEdgeFunction } from '../../lib/api';
 
 const ChatDetailScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { colors } = useTheme();
     const { user } = useAuth();
+    const insets = useSafeAreaInsets();
     const { messages, loading, sendMessage, markRead } = useMessages(id);
     const [messageText, setMessageText] = useState('');
     const [contactName, setContactName] = useState('User');
     const [contactAvatar, setContactAvatar] = useState<string | null>(null);
     const flatListRef = useRef<FlatList>(null);
 
+    // Ensure proper top padding on Android (respect translucent status bar)
+    const paddingTop = Platform.OS === 'android'
+        ? Math.max(insets.top, StatusBar.currentHeight || 24)
+        : insets.top;
+    const paddingBottom = insets.bottom;
+
     // Fetch the other participant's details
     useEffect(() => {
         if (!id || !user) return;
-        
+
         const fetchConversation = async () => {
             try {
                 const data = await callEdgeFunction<any>('conversations', 'GET', null, { id });
@@ -43,7 +51,7 @@ const ChatDetailScreen = () => {
 
                 const isA = data.participant_a_id === user.id;
                 const other = isA ? data.participant_b : data.participant_a;
-                
+
                 setContactName(other?.first_name ?? 'User');
                 setContactAvatar(other?.user_biodata?.profile_photo || null);
             } catch (e) {
@@ -91,7 +99,12 @@ const ChatDetailScreen = () => {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background, paddingTop, paddingBottom }]}>
+            <StatusBar
+                barStyle="dark-content"
+                backgroundColor="transparent"
+                translucent={true}
+            />
             {/* Header */}
             <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 <View style={styles.headerLeft}>
@@ -110,11 +123,11 @@ const ChatDetailScreen = () => {
                     <TouchableOpacity style={styles.headerIcon}>
                         <Ionicons name="call-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.headerIcon}
                         onPress={() => router.push({
                             pathname: '/shared-screens/AgreementScreen',
-                            params: { rental_id: 'temp-rental-id' } // Will be wired to real ID later
+                            params: { rental_id: 'temp-rental-id' }
                         })}
                     >
                         <Ionicons name="document-text-outline" size={22} color={colors.primary} />
@@ -167,10 +180,9 @@ const ChatDetailScreen = () => {
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
     );
 };
-
 
 const styles = StyleSheet.create({
     container: {

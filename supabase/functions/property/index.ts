@@ -7,11 +7,17 @@ const corsHeaders = {
 };
 
 function parseImages(images: unknown): string[] {
-  if (Array.isArray(images)) return images;
+  if (Array.isArray(images)) return images.filter(i => typeof i === 'string' && i.length > 0);
   if (typeof images === 'string') {
+    // Handle Postgres native array format: {url1,url2}
+    if (images.startsWith('{') && images.endsWith('}')) {
+      const inner = images.slice(1, -1);
+      if (inner.length === 0) return [];
+      return inner.split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean);
+    }
     try {
       const parsed = JSON.parse(images);
-      return Array.isArray(parsed) ? parsed : [images];
+      return Array.isArray(parsed) ? parsed.filter(i => typeof i === 'string' && i.length > 0) : [];
     } catch {
       return images.length > 0 ? [images] : [];
     }
@@ -66,13 +72,55 @@ Deno.serve(async (req) => {
 
       const { data, error } = await supabase
         .from('properties')
-        .select('*')
+        .select(`
+          *,
+          landlord:users!landlord_id (
+            first_name,
+            last_name,
+            biodata:user_biodata (
+              business_name,
+              profile_photo
+            )
+          ),
+          agent:users!agent_id (
+            first_name,
+            last_name,
+            biodata:user_biodata (
+              profile_photo
+            )
+          )
+        `)
         .eq('id', id)
         .single();
 
       if (error) return errorResponse(error.message, 500);
 
-      return jsonResponse({ ...data, images: parseImages(data.images) });
+      // Flatten biodata into landlord/agent objects for frontend compatibility
+      const flattenedData = {
+        ...data,
+        images: parseImages(data.images),
+        landlord: data.landlord ? {
+          ...data.landlord,
+          business_name: Array.isArray(data.landlord.biodata) 
+            ? data.landlord.biodata[0]?.business_name 
+            : data.landlord.biodata?.business_name,
+          avatar_url: Array.isArray(data.landlord.biodata)
+            ? data.landlord.biodata[0]?.profile_photo
+            : data.landlord.biodata?.profile_photo
+        } : null,
+        agent: data.agent ? {
+          ...data.agent,
+          avatar_url: Array.isArray(data.agent.biodata)
+            ? data.agent.biodata[0]?.profile_photo
+            : data.agent.biodata?.profile_photo
+        } : null
+      };
+
+      // Remove the intermediate biodata objects
+      if (flattenedData.landlord) delete (flattenedData.landlord as any).biodata;
+      if (flattenedData.agent) delete (flattenedData.agent as any).biodata;
+
+      return jsonResponse(flattenedData);
     }
 
     return errorResponse('Method not allowed', 405);

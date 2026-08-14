@@ -19,8 +19,28 @@ export const useProfile = () => {
         setLoading(true);
         setError(false);
         try {
+            // Fetch main profile from edge function
             const data = await callEdgeFunction('profile', 'GET');
-            if (data) setProfile(data);
+
+            // Also fetch user_biodata directly (Supabase client has the join)
+            const { data: biodataRow } = await supabase
+                .from('user_biodata')
+                .select('*')
+                .eq('id', user.id)
+                .maybeSingle();
+
+            if (data) {
+                // Merge biodata so both access patterns work:
+                //   profile?.profile_photo  (flat)
+                //   profile?.user_biodata?.profile_photo  (nested)
+                setProfile({
+                    ...data,
+                    user_biodata: biodataRow ?? null,
+                    profile_photo: biodataRow?.profile_photo ?? data?.profile_photo ?? user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_photo ?? null,
+                    phone: biodataRow?.phone_number ?? data?.phone ?? null,
+                    gender: biodataRow?.gender ?? data?.gender ?? null,
+                });
+            }
         } catch (e) {
             setError(true);
             const err = await handleError(e);

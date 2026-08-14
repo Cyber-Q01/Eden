@@ -1,120 +1,125 @@
-import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { handleError } from '../lib/errorHandler';
 import { useToast } from '../components/Toast';
 import { callEdgeFunction } from '../lib/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-export const useProperties = () => {
+export const useProperties = (filters?: {
+    search?: string;
+    type?: string;
+    propertyTypes?: string[];
+    location?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    bedrooms?: number;
+}) => {
     const { showError } = useToast();
-    const [properties, setProperties] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
 
-    const fetchProperties = async () => {
-        setLoading(true);
-        setError(false);
-        try {
-            const data = await callEdgeFunction<any[]>('properties', 'GET');
-            setProperties(data ?? []);
-        } catch (e) {
-            setError(true);
-            const err = await handleError(e);
-            showError(err);
-        } finally {
-            setLoading(false);
+    const queryInfo = useQuery({
+        queryKey: ['properties', filters],
+        queryFn: async () => {
+            try {
+                const data = await callEdgeFunction<any[]>('properties', 'GET', null, filters);
+                return data ?? [];
+            } catch (e) {
+                const err = await handleError(e);
+                showError(err);
+                throw e;
+            }
         }
+    });
+
+    return { 
+        properties: queryInfo.data ?? [], 
+        loading: queryInfo.isLoading, 
+        error: queryInfo.isError, 
+        refetch: queryInfo.refetch 
     };
-
-    useEffect(() => {
-        fetchProperties();
-    }, []);
-
-    return { properties, loading, error, refetch: fetchProperties };
 };
 
 export const useProperty = (id: string | string[] | undefined) => {
     const { showError } = useToast();
-    const [property, setProperty] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+    const propertyId = Array.isArray(id) ? id[0] : id;
 
-    const fetchProperty = async () => {
-        if (!id) {
-            setLoading(false);
-            return;
-        }
-        const propertyId = Array.isArray(id) ? id[0] : id;
-        setLoading(true);
-        setError(false);
-        try {
-            const data = await callEdgeFunction('property', 'GET', null, { id: propertyId });
-            setProperty(data);
-        } catch (e) {
-            setError(true);
-            const err = await handleError(e);
-            showError(err);
-        } finally {
-            setLoading(false);
-        }
+    const queryInfo = useQuery({
+        queryKey: ['property', propertyId],
+        queryFn: async () => {
+            if (!propertyId) return null;
+            try {
+                const data = await callEdgeFunction('property', 'GET', null, { id: propertyId });
+                return data;
+            } catch (e) {
+                const err = await handleError(e);
+                showError(err);
+                throw e;
+            }
+        },
+        enabled: !!propertyId
+    });
+
+    return { 
+        property: queryInfo.data, 
+        loading: queryInfo.isLoading, 
+        error: queryInfo.isError, 
+        refetch: queryInfo.refetch 
     };
-
-    useEffect(() => {
-        fetchProperty();
-    }, [id]);
-
-    return { property, loading, error, refetch: fetchProperty };
 };
 
 export const useFavorites = () => {
     const { user } = useAuth();
     const { showError, showSuccess } = useToast();
-    const [favorites, setFavorites] = useState<any[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(false);
+    const queryClient = useQueryClient();
 
-    const fetchFavorites = async () => {
-        if (!user) return;
-        setLoading(true);
-        setError(false);
-        try {
-            const data = await callEdgeFunction<any[]>('favorites', 'GET');
-            setFavorites(data ?? []);
-        } catch (e) {
-            setError(true);
-            const err = await handleError(e);
-            showError(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const queryInfo = useQuery({
+        queryKey: ['favorites', user?.id],
+        queryFn: async () => {
+            if (!user) return [];
+            try {
+                const data = await callEdgeFunction<any[]>('favorites', 'GET');
+                return data ?? [];
+            } catch (e) {
+                const err = await handleError(e);
+                showError(err);
+                throw e;
+            }
+        },
+        enabled: !!user
+    });
 
-    const addFavorite = async (propertyId: string) => {
-        if (!user) return;
-        try {
+    const addMutation = useMutation({
+        mutationFn: async (propertyId: string) => {
             await callEdgeFunction('favorites', 'POST', { property_id: propertyId });
+        },
+        onSuccess: () => {
             showSuccess('Property saved to favorites');
-            await fetchFavorites();
-        } catch (e) {
+            queryClient.invalidateQueries({ queryKey: ['favorites'] });
+        },
+        onError: async (e) => {
             const err = await handleError(e);
             showError(err);
         }
-    };
+    });
 
-    const removeFavorite = async (propertyId: string) => {
-        if (!user) return;
-        try {
+    const removeMutation = useMutation({
+        mutationFn: async (propertyId: string) => {
             await callEdgeFunction('favorites', 'DELETE', { property_id: propertyId });
+        },
+        onSuccess: () => {
             showSuccess('Property removed from favorites');
-            await fetchFavorites();
-        } catch (e) {
+            queryClient.invalidateQueries({ queryKey: ['favorites'] });
+        },
+        onError: async (e) => {
             const err = await handleError(e);
             showError(err);
         }
+    });
+
+    return { 
+        favorites: queryInfo.data ?? [], 
+        loading: queryInfo.isLoading, 
+        error: queryInfo.isError, 
+        addFavorite: addMutation.mutateAsync, 
+        removeFavorite: removeMutation.mutateAsync, 
+        refetch: queryInfo.refetch 
     };
-
-    useEffect(() => {
-        fetchFavorites();
-    }, [user]);
-
-    return { favorites, loading, error, addFavorite, removeFavorite, refetch: fetchFavorites };
 };

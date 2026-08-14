@@ -6,19 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
-function parseImages(images: unknown): string[] {
-  if (Array.isArray(images)) return images;
-  if (typeof images === 'string') {
-    try {
-      const parsed = JSON.parse(images);
-      return Array.isArray(parsed) ? parsed : [images];
-    } catch {
-      return images.length > 0 ? [images] : [];
-    }
-  }
-  return [];
-}
-
 function createUserClient(req: Request) {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) throw new Error('Missing Authorization header');
@@ -61,27 +48,58 @@ Deno.serve(async (req) => {
     const supabase = createUserClient(req);
     const userId = await getUserId(req);
 
-    // ── GET: Fetch profile ──────────────────────────────────────────────
+    // ── GET: Fetch profile with biodata ────────────────────────────────────
     if (req.method === 'GET') {
       const { data, error } = await supabase
         .from('users')
-        .select('*')
+        .select('*, user_biodata(*)')
         .eq('id', userId)
         .single();
 
       if (error) return errorResponse(error.message, 500);
-      return jsonResponse(data);
+
+      // Flatten profile_photo from user_biodata for convenience
+      const profile = {
+        ...data,
+        profile_photo: data?.user_biodata?.profile_photo ?? null,
+      };
+
+      return jsonResponse(profile);
     }
 
-    // ── PUT: Update profile ─────────────────────────────────────────────
+    // ── PUT: Update profile fields ──────────────────────────────────────────
     if (req.method === 'PUT') {
-      const updates = await req.json();
-      const { error } = await supabase
-        .from('users')
-        .update(updates)
-        .eq('id', userId);
+      const body = await req.json();
+      const { profile_photo, first_name, last_name, phone, gender } = body;
 
-      if (error) return errorResponse(error.message, 500);
+      // Only first_name and last_name live on the users table
+      const userUpdates: Record<string, any> = {};
+      if (first_name !== undefined) userUpdates.first_name = first_name;
+      if (last_name !== undefined) userUpdates.last_name = last_name;
+
+      if (Object.keys(userUpdates).length > 0) {
+        const { error: userError } = await supabase
+          .from('users')
+          .update(userUpdates)
+          .eq('id', userId);
+
+        if (userError) return errorResponse(userError.message, 500);
+      }
+
+      // phone, gender, and profile_photo all live in user_biodata
+      const biodataUpdates: Record<string, any> = { id: userId };
+      if (phone !== undefined) biodataUpdates.phone_number = phone;
+      if (gender !== undefined) biodataUpdates.gender = gender;
+      if (profile_photo !== undefined) biodataUpdates.profile_photo = profile_photo;
+
+      if (Object.keys(biodataUpdates).length > 1) { // more than just 'id'
+        const { error: biodataError } = await supabase
+          .from('user_biodata')
+          .upsert(biodataUpdates, { onConflict: 'id' });
+
+        if (biodataError) return errorResponse(biodataError.message, 500);
+      }
+
       return jsonResponse({ success: true });
     }
 

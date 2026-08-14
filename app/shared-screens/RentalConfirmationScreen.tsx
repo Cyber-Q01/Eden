@@ -15,6 +15,7 @@ import {
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
 import { usePayment } from '../../hooks/usePayment';
+import { supabase } from '../../lib/supabase';
 
 const formatCountdown = (ms: number) => {
     if (ms <= 0) return '00:00:00';
@@ -43,6 +44,39 @@ const RentalConfirmationScreen = () => {
     const [showDisputeModal, setShowDisputeModal] = useState(false);
     const [disputeReason, setDisputeReason] = useState('');
     const pulseAnim = useRef(new Animated.Value(1)).current;
+
+    const [landlordName, setLandlordName] = useState('Landlord');
+    const [bankInfo, setBankInfo] = useState('Bank Transfer');
+
+    useEffect(() => {
+        const fetchRentalDetails = async () => {
+            if (!rental_id) return;
+            try {
+                const { data, error } = await supabase
+                    .from('rentals')
+                    .select('owner:users!owner_id(first_name, last_name, bank_accounts(bank_name, account_number))')
+                    .eq('id', rental_id)
+                    .single();
+                
+                if (data && data.owner) {
+                    const owner: any = data.owner;
+                    const name = `${owner.first_name || ''} ${owner.last_name || ''}`.trim();
+                    if (name) setLandlordName(name);
+
+                    if (owner.bank_accounts) {
+                        const bank = Array.isArray(owner.bank_accounts) ? owner.bank_accounts[0] : owner.bank_accounts;
+                        if (bank) {
+                            const maskedAcc = bank.account_number ? `**** ${bank.account_number.slice(-4)}` : '';
+                            setBankInfo(`${bank.bank_name || 'Bank'} ${maskedAcc}`.trim());
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching rental details:', err);
+            }
+        };
+        fetchRentalDetails();
+    }, [rental_id]);
 
     useEffect(() => {
         if (!confirmation_deadline) return;
@@ -81,7 +115,16 @@ const RentalConfirmationScreen = () => {
                     onPress: async () => {
                         const success = await confirmRental(rental_id);
                         if (success) {
-                            router.replace('/(tabs)');
+                            router.replace({
+                                pathname: '/shared-screens/EscrowReleasedScreen',
+                                params: {
+                                    amount: amount || '0',
+                                    released_to: landlordName,
+                                    bank: bankInfo,
+                                    release_time: new Date().toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) + ' • ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                    reference: 'REL-' + Date.now(),
+                                }
+                            });
                         }
                     },
                 },
@@ -139,7 +182,7 @@ const RentalConfirmationScreen = () => {
                         {formatCountdown(timeLeft)}
                     </Animated.Text>
                     <Text style={[styles.timerSub, { color: colors.textSecondary }]}>
-                        Visit the apartment and confirm before time runs out
+                        You can confirm your apartment and release payment at any time before or during this countdown.
                     </Text>
                     {urgency && (
                         <View style={[styles.urgencyBanner, { backgroundColor: '#ef444415' }]}>

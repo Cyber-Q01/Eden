@@ -1,3 +1,4 @@
+import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -16,7 +17,7 @@ import ThemedTextInput from '../../components/ThemedTextInput';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
 import { useRequests } from '../../hooks/useRequests';
-import { sanitizeText, validateDescription, validateRequired, validateAll } from '../../lib/validation';
+import { sanitizeText, validateAll, validateDescription, validateRequired } from '../../lib/validation';
 
 const ComplaintRequestScreen = () => {
     const router = useRouter();

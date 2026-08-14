@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "620297547701",
+    "project_id": "eden-2381b",
+    "storage_bucket": "eden-2381b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:620297547701:android:e2c86edbaa4d915da933fc",
+        "android_client_info": {
+          "package_name": "com.eden.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_XKQSZr3LxMsJJ_RtvcuXrugrUvnpp14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:620297547701:android:f1d1a8f4b97bc674a933fc",
+        "android_client_info": {
+          "package_name": "com.edenhome.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_XKQSZr3LxMsJJ_RtvcuXrugrUvnpp14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

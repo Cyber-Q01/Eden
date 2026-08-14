@@ -62,11 +62,13 @@ Deno.serve(async (req) => {
       next_of_kin_phone,
       next_of_kin_relationship,
       // Landlord specific
+      // Landlord specific
       business_name,
       cac_number,
       bank_name,
       account_number,
-      account_name
+      account_name,
+      bank_code
     } = body;
 
     // 3. Insert/Update Bio Data
@@ -100,18 +102,55 @@ Deno.serve(async (req) => {
 
     if (bioDataError) throw bioDataError;
 
-    // 4. Update bank details if landlord
-    if ((role === 'LANDLORD' || role === 'ADMIN') && bank_name && account_number && account_name) {
-      const { error: bankError } = await supabaseUserClient
+    // 4. Update bank details & Create Subaccount if landlord
+    if ((role === 'LANDLORD' || role === 'ADMIN') && bank_name && account_number && account_name && bank_code) {
+      // Upsert bank details
+      const { data: bankData, error: bankError } = await supabaseUserClient
         .from('bank_accounts')
         .upsert({
           user_id: userId,
           bank_name,
           account_number,
-          account_name
-        });
+          account_name,
+          bank_code
+        })
+        .select()
+        .single();
       
       if (bankError) throw bankError;
+
+      // Create Paystack Subaccount
+      try {
+        const finalBusinessName = business_name || `${user.user_metadata?.firstName} ${user.user_metadata?.lastName}` || 'EdenHome Landlord';
+        
+        const paystackRes = await fetch('https://api.paystack.co/subaccount', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${Deno.env.get('PAYSTACK_SECRET_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            business_name: finalBusinessName,
+            settlement_bank: bank_code,
+            account_number: account_number,
+            percentage_charge: 3,
+          }),
+        });
+
+        const paystackData = await paystackRes.json();
+
+        if (paystackData.status) {
+          await supabaseAdminClient
+            .from('payment_accounts')
+            .upsert({
+              user_id: userId,
+              bank_account_id: bankData.id,
+              paystack_subaccount_code: paystackData.data.subaccount_code,
+            }, { onConflict: 'user_id' });
+        }
+      } catch (e) {
+        console.error('Paystack Subaccount Error during onboarding:', e.message);
+      }
     }
 
     // 5. Update public.users `completed_biodata` column

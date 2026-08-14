@@ -85,7 +85,7 @@ export const generateAgreementPDF = async (agreement: Agreement) => {
 
           /* Watermark */
           body::before {
-            content: 'EDENHOME';
+            content: 'Eden';
             position: fixed;
             top: 50%;
             left: 50%;
@@ -394,14 +394,14 @@ export const generateAgreementPDF = async (agreement: Agreement) => {
         <div class="document-footer">
           <div class="verification-info">
             <h4>🔒 Document Verification</h4>
-            <p>This legally binding agreement was generated and digitally signed through the EdenHome secure platform.</p>
+            <p>This legally binding agreement was generated and digitally signed through the Eden secure platform.</p>
             <p>All signatures are verified and timestamped. This document cannot be altered after signing.</p>
             <div class="verification-id">ID: ${agreement.id}</div>
           </div>
 
           <div class="copyright">
-            <p><strong>EdenHome</strong> — Trusted Property Management Platform</p>
-            <p>&copy; ${new Date().getFullYear()} EdenHome Technologies. All rights reserved.</p>
+            <p><strong>Eden</strong> — Trusted Property Management Platform</p>
+            <p>&copy; ${new Date().getFullYear()} Eden Technologies. All rights reserved.</p>
             <p style="margin-top: 5px; font-size: 7pt;">Generated on ${new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}</p>
           </div>
         </div>

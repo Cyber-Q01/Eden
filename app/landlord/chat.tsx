@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
@@ -10,17 +10,23 @@ import { useProfile } from '../../hooks/useProfile';
 const LandlordChatScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
-    const { conversations, loading } = useChat();
+    const { conversations, loading, refetch } = useChat();
     const { profile } = useProfile();
+
+    useFocusEffect(
+        useCallback(() => {
+            refetch();
+        }, [refetch])
+    );
 
     const renderChatItem = ({ item }: { item: any }) => {
         // Determine the other participant's details
         const otherUser = item.participant_a?.id === profile?.id
             ? item.participant_b
             : item.participant_a;
-        
-        const name = otherUser?.first_name 
-            ? `${otherUser.first_name} ${otherUser.last_name || ''}`.trim() 
+
+        const name = otherUser?.first_name
+            ? `${otherUser.first_name}`.trim()
             : 'User';
         const avatar = otherUser?.user_biodata?.profile_photo;
 
@@ -56,15 +62,28 @@ const LandlordChatScreen = () => {
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <View style={styles.header}>
                 <View style={styles.userInfo}>
-                    <BackButton />
+                    {profile?.user_biodata?.profile_photo ? (
+                        <Image
+                            source={{ uri: profile.user_biodata.profile_photo }}
+                            style={[styles.userAvatar, { backgroundColor: colors.border }]}
+                        />
+                    ) : (
+                        <Image
+                            source={require('../../assets/icon/profiles/profile1.png')}
+                            style={[styles.userAvatar, { backgroundColor: colors.border }]}
+                        />
+                    )}
                     <View>
-                        <Text style={[styles.greetingText, { color: colors.textSecondary }]}>Landlord Messages</Text>
-                        <Text style={[styles.userName, { color: colors.text }]}>{profile?.first_name} {profile?.last_name}</Text>
+                        <Text style={[styles.greetingText, { color: colors.textSecondary }]}>Messages</Text>
+                        <Text style={[styles.userName, { color: colors.text }]}>{profile?.first_name}</Text>
                     </View>
                 </View>
                 <View style={styles.headerActions}>
                     <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.card }]}>
                         <Ionicons name="search" size={20} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.iconButton, styles.plusButton, { backgroundColor: colors.primary }]}>
+                        <Ionicons name="add" size={24} color="#FFF" />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -108,8 +127,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 12,
     },
-    backButton: {
-        padding: 4,
+    userAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
     },
     greetingText: {
         fontSize: 12,
@@ -134,6 +155,8 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 4,
         elevation: 2,
+    },
+    plusButton: {
     },
     content: {
         flex: 1,

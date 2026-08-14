@@ -1,9 +1,9 @@
 import React from 'react';
-import { StyleSheet, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
+import { StyleSheet, TextInput, TextInputProps, View, ViewStyle, StyleProp } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
 interface ThemedTextInputProps extends TextInputProps {
-    containerStyle?: ViewStyle;
+    containerStyle?: StyleProp<ViewStyle>;
     leftIcon?: React.ReactNode;
     rightIcon?: React.ReactNode;
 }

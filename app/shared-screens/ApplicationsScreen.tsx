@@ -133,13 +133,32 @@ const ApplicationsScreen = () => {
 
         {/* Renter/Landlord info */}
         <View style={styles.renterRow}>
-          <View style={[styles.renterAvatar, { backgroundColor: colors.primary + '20' }]}>
-            <Text style={[styles.renterInitial, { color: colors.primary }]}>
-              {isRenter
-                ? (item.property as any)?.owner?.first_name?.[0]?.toUpperCase()
-                : item.renter?.first_name?.[0]?.toUpperCase() ?? '?'}
-            </Text>
-          </View>
+          {(() => {
+            let photoUrl = isRenter
+              ? ((item.property as any)?.owner?.profile_photo || (item.property as any)?.owner?.avatar_url)
+              : (item.renter?.profile_photo || item.renter?.avatar_url);
+            if (!photoUrl && !isRenter && item.message) {
+              try {
+                const parsed = JSON.parse(item.message);
+                if (parsed?.__eden_v === 1 && parsed?.verification) {
+                  photoUrl = parsed.verification.selfie_url || parsed.verification.full_photo_url;
+                }
+              } catch {}
+            }
+            return (
+              <View style={[styles.renterAvatar, { backgroundColor: colors.primary + '20', overflow: 'hidden' }]}>
+                {photoUrl ? (
+                  <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} />
+                ) : (
+                  <Text style={[styles.renterInitial, { color: colors.primary }]}>
+                    {isRenter
+                      ? (item.property as any)?.owner?.first_name?.[0]?.toUpperCase()
+                      : item.renter?.first_name?.[0]?.toUpperCase() ?? '?'}
+                  </Text>
+                )}
+              </View>
+            );
+          })()}
           <View style={{ flex: 1 }}>
             <Text style={[styles.renterName, { color: colors.text }]}>
               {isRenter ? 'View Details to see Landlord' : `${item.renter?.first_name} ${item.renter?.last_name}`}

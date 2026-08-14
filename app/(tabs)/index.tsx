@@ -3,35 +3,77 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import PropertyCard from '../../components/PropertyCard';
 import FilterModal from '../../components/FilterModal';
+import PropertyCard from '../../components/PropertyCard';
+import RetryOverlay from '../../components/RetryOverlay';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import SectionHeader from '../../components/SectionHeader';
-import RetryOverlay from '../../components/RetryOverlay';
 import { useTheme } from '../../context/ThemeContext';
-import { useProperties } from '../../hooks/useProperties';
-import { useProfile } from '../../hooks/useProfile';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useProfile } from '../../hooks/useProfile';
+import { useFavorites, useProperties } from '../../hooks/useProperties';
 
 const { width } = Dimensions.get('window');
 
 const HERO_BANNERS = [
-    { id: '1', color: '#407BFF', title: 'Find your dream home' },
-    { id: '2', color: '#0047AB', title: 'Verified properties only' },
-    { id: '3', color: '#66B2FF', title: 'Schedule tours easily' },
-    { id: '4', color: '#1E3C72', title: 'Secure payments flow' },
+    { id: '1', color: '#407BFF', title: 'Find your dream home', subtitle: 'Browse thousands of verified properties' },
+    { id: '2', color: '#0047AB', title: 'Verified properties only', subtitle: 'Inspected & 100% scam free' },
+    { id: '3', color: '#00C853', title: 'Schedule tours easily', subtitle: 'Book physical & virtual tours' },
+    { id: '4', color: '#1E3C72', title: 'Secure escrow payments', subtitle: 'Funds protected until you confirm' },
+    { id: '5', color: '#7C3AED', title: 'Zero hidden fees', subtitle: 'Transparent pricing & direct contact' },
+    { id: '6', color: '#DB2777', title: 'Fast application approval', subtitle: 'Apply online in under 2 minutes' },
+    { id: '7', color: '#D97706', title: 'Find verified artisans', subtitle: 'Plumbers, electricians & repair services' },
+    { id: '8', color: '#059669', title: 'Instant lease agreements', subtitle: 'Digital legal documentation in-app' },
 ];
 
 const HomeScreen = () => {
     const { colors } = useTheme();
     const router = useRouter();
-    const { properties, loading: propertiesLoading, error: propertiesError, refetch: refetchProperties } = useProperties();
+    const [isFilterVisible, setIsFilterVisible] = useState(false);
+    const [filters, setFilters] = useState({
+        search: '',
+        type: '',
+        propertyTypes: [] as string[],
+        location: '',
+        minPrice: undefined as number | undefined,
+        maxPrice: undefined as number | undefined,
+    });
+
+    const { properties, loading: propertiesLoading, error: propertiesError, refetch: refetchProperties } = useProperties(filters);
+    const { favorites, addFavorite, removeFavorite } = useFavorites();
     const { profile, loading: profileLoading } = useProfile();
     const { unreadCount } = useNotifications();
-    const [isFilterVisible, setIsFilterVisible] = useState(false);
-    const categories = ['1 Bedroom', 'Duplex', '2 Bedroom', 'Studio', 'Bungalow'];
-    
-    // Just grab top 4 newest properties as 'recommendations'
+    // Quick filter categories mapping display labels to actual property type values
+    const categories = [
+        { label: 'All', values: [] as string[] },
+        { label: 'Self Contain', values: ['Self Contain', 'Room and Parlour Self Contain'] },
+        { label: '1 Bedroom', values: ['1 Bedroom Flat', 'Mini Flat'] },
+        { label: '2 Bedroom', values: ['2 Bedroom Flat'] },
+        { label: '3 Bedroom', values: ['3 Bedroom Flat'] },
+        { label: 'Duplex', values: ['Detached Duplex', 'Semi-Detached Duplex', 'Terrace Duplex'] },
+        { label: 'Studio', values: ['Studio Apartment'] },
+        { label: 'Shared', values: ['Shared apartments'] },
+    ];
+
+    const isFavorite = (id: string) => favorites.some(f => f.id === id);
+
+    const handleToggleFavorite = async (propertyId: string) => {
+        if (isFavorite(propertyId)) {
+            await removeFavorite(propertyId);
+        } else {
+            await addFavorite(propertyId);
+        }
+    };
+
+    // Greeting based on time of day
+    const getGreeting = () => {
+        const hour = new Date().getHours();
+        if (hour < 12) return 'Good morning';
+        if (hour < 18) return 'Good afternoon';
+        return 'Good evening';
+    };
+
+    // Grab top 4 newest properties as 'recommendations' / 'featured'
     const recommendations = properties.slice(0, 4);
 
     const [activeBanner, setActiveBanner] = useState(0);
@@ -55,22 +97,10 @@ const HomeScreen = () => {
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {/* Header Section */}
                 <View style={styles.header}>
-                    <View>
-                        <Text style={[styles.welcomeText, { color: colors.primary }]}>
-                            Hi, {profile?.first_name || 'Guest'}
-                        </Text>
-                    </View>
-                    <View style={styles.headerRight}>
-                        <TouchableOpacity 
-                            style={styles.iconButton}
-                            onPress={() => router.push('/shared-screens/NotificationsScreen')}
-                        >
-                            <Ionicons name="notifications-outline" size={24} color={colors.text} />
-                            {unreadCount > 0 && <View style={[styles.notificationDot, { borderColor: colors.background }]} />}
-                        </TouchableOpacity>
-                        {profile?.user_biodata?.profile_photo ? (
+                    <View style={styles.headerLeft}>
+                        {profile?.profile_photo ? (
                             <Image
-                                source={{ uri: profile.user_biodata.profile_photo }}
+                                source={{ uri: profile.profile_photo }}
                                 style={styles.avatar}
                             />
                         ) : (
@@ -79,41 +109,24 @@ const HomeScreen = () => {
                                 style={styles.avatar}
                             />
                         )}
-                    </View>
-                </View>
-
-                {/* Search Section */}
-                <SearchBar
-                    placeholder="Search by location, price, or type"
-                    style={{ paddingHorizontal: 20 }}
-                    onFilterPress={() => setIsFilterVisible(true)}
-                />
-
-                {/* Categories Section */}
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.categoriesContainer}
-                >
-                    {categories.map((cat, index) => (
-                        <TouchableOpacity
-                            key={index}
-                            style={[
-                                styles.categoryItem,
-                                { backgroundColor: colors.card },
-                                index === 0 && [styles.activeCategory, { backgroundColor: colors.primary + '1A', borderColor: colors.primary }]
-                            ]}
-                        >
-                            <Text style={[
-                                styles.categoryText,
-                                { color: colors.primary },
-                                index === 0 && styles.activeCategoryText
-                            ]}>
-                                {cat}
+                        <View style={styles.headerTextContainer}>
+                            <Text style={[styles.welcomeText, { color: colors.text }]}>
+                                {getGreeting()}, {profile?.first_name || 'John'}
                             </Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
+                            <Text style={[styles.subtitleText, { color: colors.textSecondary }]}>
+                                Find your perfect home today
+                            </Text>
+                        </View>
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => router.push('/shared-screens/NotificationsScreen')}
+                    >
+                        <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                        {unreadCount > 0 && <View style={[styles.notificationDot, { borderColor: colors.background }]} />}
+                    </TouchableOpacity>
+                </View>
 
                 {/* Hero Banner Carousel */}
                 <View style={styles.heroContainer}>
@@ -135,6 +148,9 @@ const HomeScreen = () => {
                             >
                                 <View style={styles.heroGradient}>
                                     <Text style={styles.bannerTitle}>{banner.title}</Text>
+                                    {banner.subtitle && (
+                                        <Text style={styles.bannerSubtitle}>{banner.subtitle}</Text>
+                                    )}
                                 </View>
                             </View>
                         ))}
@@ -154,11 +170,60 @@ const HomeScreen = () => {
                     </View>
                 </View>
 
-                {/* Recommended Section */}
-                <SectionHeader title="Recommended for You" style={styles.sectionHeader} />
+                {/* Search Section */}
+                <SearchBar
+                    placeholder="Search by location, price, or type"
+                    style={{ paddingHorizontal: 20 }}
+                    onFilterPress={() => setIsFilterVisible(true)}
+                    onSearch={(text) => setFilters(prev => ({ ...prev, search: text }))}
+                />
+
+                {/* Categories Section */}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.categoriesContainer}
+                >
+                    {categories.map((cat, index) => {
+                        const isAll = cat.values.length === 0;
+                        const isSelected = isAll
+                            ? filters.propertyTypes.length === 0 && !filters.type
+                            : filters.propertyTypes.length > 0 && cat.values.every(v => filters.propertyTypes.includes(v));
+                        return (
+                            <TouchableOpacity
+                                key={index}
+                                style={[
+                                    styles.categoryItem,
+                                    isSelected ? styles.activeCategory : [styles.inactiveCategory, { backgroundColor: colors.card, borderColor: colors.border }]
+                                ]}
+                                onPress={() => setFilters(prev => ({
+                                    ...prev,
+                                    type: '',
+                                    propertyTypes: isAll ? [] : cat.values,
+                                }))}
+                            >
+                                <Text style={[
+                                    styles.categoryText,
+                                    isSelected ? styles.activeCategoryText : [styles.inactiveCategoryText, { color: colors.textSecondary }]
+                                ]}>
+                                    {cat.label}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+
+                {/* Featured Nearby Section */}
+                <SectionHeader
+                    title="Featured Nearby"
+                    style={styles.sectionHeader}
+                />
 
                 <ScrollView
                     horizontal
+                    pagingEnabled
+                    snapToInterval={width - 24}
+                    decelerationRate="fast"
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.recommendationsContainer}
                 >
@@ -170,23 +235,57 @@ const HomeScreen = () => {
                         recommendations.map((item) => (
                             <PropertyCard
                                 key={item.id}
-                                image={item.images?.[0] || require('../../assets/images/Homes/home1.png')}
+                                image={item.images}
                                 title={item.title}
-                                price={`₦${item.price}`}
+                                price={`₦${Number(item.price).toLocaleString()}`}
                                 location={item.location}
                                 onPress={() => router.push(`/property/${item.id}`)}
-                                onFavoritePress={() => { }}
+                                isFavorite={isFavorite(item.id)}
+                                onFavoritePress={() => handleToggleFavorite(item.id)}
                                 containerStyle={styles.recommendationCard}
                             />
                         ))
                     )}
                 </ScrollView>
 
-                <FilterModal 
-                    visible={isFilterVisible} 
+                {/* Nearby Properties Section */}
+                <SectionHeader
+                    title="Nearby Properties"
+                    style={styles.sectionHeader}
+                />
+
+                <View style={styles.nearbyListContainer}>
+                    {propertiesLoading ? (
+                        <ActivityIndicator size="large" color={colors.primary} />
+                    ) : propertiesError ? (
+                        <RetryOverlay message="Couldn't load nearby properties." onRetry={refetchProperties} />
+                    ) : (
+                        properties.slice(0, 5).map((item) => (
+                            <PropertyCard
+                                key={`nearby-${item.id}`}
+                                variant="horizontal"
+                                image={item.images}
+                                title={item.title}
+                                price={`₦${Number(item.price).toLocaleString()}`}
+                                location={item.location}
+                                onPress={() => router.push(`/property/${item.id}`)}
+                            />
+                        ))
+                    )}
+                </View>
+
+                <FilterModal
+                    visible={isFilterVisible}
                     onClose={() => setIsFilterVisible(false)}
-                    onApply={(filters) => {
-                        console.log('Filters applied:', filters);
+                    onApply={(newFilters) => {
+                        setFilters(prev => ({
+                            ...prev,
+                            type: '', // Clear single type category if modal is used
+                            propertyTypes: newFilters.propertyTypes,
+                            minPrice: newFilters.minPrice,
+                            maxPrice: newFilters.maxPrice,
+                            location: newFilters.location,
+                        }));
                         setIsFilterVisible(false);
                     }}
                 />
@@ -197,7 +296,7 @@ const HomeScreen = () => {
 
 const styles = StyleSheet.create({
     scrollContent: {
-        paddingBottom: 20,
+        paddingBottom: 30,
     },
     header: {
         flexDirection: 'row',
@@ -207,58 +306,83 @@ const styles = StyleSheet.create({
         paddingTop: 20,
         marginBottom: 20,
     },
-    welcomeText: {
-        fontSize: 24,
-        fontWeight: '800',
-        color: '#0047AB',
-    },
-    headerRight: {
+    headerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
     },
+    headerTextContainer: {
+        justifyContent: 'center',
+    },
+    welcomeText: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#0F172A',
+    },
+    subtitleText: {
+        fontSize: 13,
+        color: '#64748B',
+        fontWeight: '400',
+        marginTop: 2,
+    },
     iconButton: {
-        padding: 4,
+        padding: 8,
         position: 'relative',
+        borderRadius: 99,
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
     },
     notificationDot: {
         position: 'absolute',
-        top: 4,
-        right: 4,
-        width: 12,
-        height: 12,
-        borderRadius: 6,
+        top: 6,
+        right: 8,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
         backgroundColor: '#ef4444',
-        borderWidth: 2,
     },
     avatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
     },
     categoriesContainer: {
         paddingHorizontal: 20,
-        gap: 12,
+        gap: 10,
         marginBottom: 24,
     },
     categoryItem: {
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 10,
-        backgroundColor: '#F5F8FF',
+        paddingHorizontal: 18,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    inactiveCategory: {
+        backgroundColor: '#FFFFFF',
+        borderColor: '#E2E8F0',
     },
     activeCategory: {
-        backgroundColor: '#E6EEFF',
-        borderWidth: 1,
-        borderColor: '#0047AB',
+        backgroundColor: '#2563EB',
+        borderColor: '#2563EB',
     },
     categoryText: {
         fontSize: 14,
-        color: '#0047AB',
         fontWeight: '500',
     },
+    inactiveCategoryText: {
+        color: '#64748B',
+    },
     activeCategoryText: {
-        fontWeight: '700',
+        color: '#FFFFFF',
+        fontWeight: '600',
     },
     heroContainer: {
         marginHorizontal: 20,
@@ -285,7 +409,14 @@ const styles = StyleSheet.create({
         fontSize: 22,
         fontWeight: '800',
         color: '#FFFFFF',
-        width: '60%',
+        width: '70%',
+    },
+    bannerSubtitle: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: 'rgba(255, 255, 255, 0.9)',
+        marginTop: 6,
+        width: '80%',
     },
     pagination: {
         flexDirection: 'row',
@@ -306,12 +437,20 @@ const styles = StyleSheet.create({
     },
     sectionHeader: {
         paddingHorizontal: 20,
+        marginTop: 10,
+        marginBottom: 12,
     },
     recommendationsContainer: {
         paddingHorizontal: 20,
         gap: 16,
     },
     recommendationCard: {
+        width: width - 40,
+        marginBottom: 20,
+    },
+    nearbyListContainer: {
+        paddingHorizontal: 20,
+        gap: 4,
         marginBottom: 20,
     },
 });

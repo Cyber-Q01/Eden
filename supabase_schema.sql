@@ -1,410 +1,424 @@
--- ==============================================================================
--- EDENHOME SUPABASE SCHEMA & RLS POLICIES
--- ==============================================================================
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- 1. Create Enums
-CREATE TYPE user_role AS ENUM ('TENANT', 'LANDLORD', 'ADMIN');
-
--- 2. Create Public Users Table (Extends auth.users)
-CREATE TABLE public.users (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  first_name TEXT,
-  last_name TEXT,
-  role user_role DEFAULT 'TENANT'::user_role,
-  is_verified BOOLEAN DEFAULT false,
-  completed_biodata BOOLEAN DEFAULT false,
-  smile_job_id TEXT,
-  id_number TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE public.agent_property_assignments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  agent_id uuid NOT NULL,
+  property_id uuid NOT NULL,
+  assigned_by uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT agent_property_assignments_pkey PRIMARY KEY (id),
+  CONSTRAINT agent_property_assignments_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.users(id),
+  CONSTRAINT agent_property_assignments_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id),
+  CONSTRAINT agent_property_assignments_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES public.users(id)
 );
-
--- Note: We enable RLS on the users table
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
--- Users can read their own profile
-CREATE POLICY "Users can view their own profile."
-  ON public.users FOR SELECT
-  USING (auth.uid() = id);
-
--- Users can update their own profile
-CREATE POLICY "Users can update their own profile."
-  ON public.users FOR UPDATE
-  USING (auth.uid() = id);
-
--- Trigger to automatically create a public.user when an auth.user signs up
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.users (id, email, first_name, last_name, role)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    NEW.raw_user_meta_data->>'firstName',
-    NEW.raw_user_meta_data->>'lastName',
-    COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'TENANT'::user_role)
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
-
-
--- 3. Create Properties Table
-CREATE TABLE public.properties (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  price NUMERIC NOT NULL,
-  location TEXT NOT NULL,
-  type TEXT NOT NULL, -- e.g. "2 Bedroom"
-  images TEXT[] DEFAULT '{}',
-  amenities TEXT[] DEFAULT '{}',
-  landlord_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE public.ai_cache (
+  cache_key text NOT NULL,
+  type text NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  expires_at timestamp with time zone NOT NULL,
+  CONSTRAINT ai_cache_pkey PRIMARY KEY (cache_key)
 );
-
-ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
-
--- Properties are public to read
-CREATE POLICY "Properties are publicly viewable."
-  ON public.properties FOR SELECT
-  USING (true);
-
--- Only Landlords can insert properties
-CREATE POLICY "Landlords can create properties."
-  ON public.properties FOR INSERT
-  WITH CHECK (
-    auth.uid() = landlord_id AND 
-    EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('LANDLORD', 'ADMIN'))
-  );
-
--- Landlords can update their own properties
-CREATE POLICY "Landlords can update their own properties."
-  ON public.properties FOR UPDATE
-  USING (auth.uid() = landlord_id);
-
--- Landlords can delete their own properties
-CREATE POLICY "Landlords can delete their own properties."
-  ON public.properties FOR DELETE
-  USING (auth.uid() = landlord_id);
-
-
--- 4. Create Favorites Table
-CREATE TABLE public.favorites (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-  property_id UUID REFERENCES public.properties(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, property_id)
+CREATE TABLE public.ai_logs (
+  id bigint NOT NULL DEFAULT nextval('ai_logs_id_seq'::regclass),
+  user_id uuid,
+  type text NOT NULL,
+  prompt_tokens integer,
+  response_tokens integer,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT ai_logs_pkey PRIMARY KEY (id)
 );
-
-ALTER TABLE public.favorites ENABLE ROW LEVEL SECURITY;
-
--- Users can see their own favorites
-CREATE POLICY "Users can read their own favorites."
-  ON public.favorites FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Users can add to their favorites
-CREATE POLICY "Users can add favorites."
-  ON public.favorites FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Users can delete their favorites
-CREATE POLICY "Users can delete their favorites."
-  ON public.favorites FOR DELETE
-  USING (auth.uid() = user_id);
-
-
--- 5. Create Subscriptions Table
-CREATE TABLE public.subscriptions (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  price NUMERIC NOT NULL,
-  features TEXT[] DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE public.ai_rate_limits (
+  user_id uuid NOT NULL,
+  window_start timestamp with time zone NOT NULL,
+  request_count integer NOT NULL DEFAULT 0,
+  CONSTRAINT ai_rate_limits_pkey PRIMARY KEY (user_id, window_start)
 );
-
-ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
-
--- Subscriptions are publicly readable
-CREATE POLICY "Subscriptions are publicly viewable."
-  ON public.subscriptions FOR SELECT
-  USING (true);
-
--- Only Admins can modify subscriptions
-CREATE POLICY "Admins can manage subscriptions"
-  ON public.subscriptions FOR ALL
-  USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'ADMIN'));
-
-
--- 6. Setup Storage Buckets
--- Note: Requires running these inside the Supabase SQL editor or via dashboard as it touches storage schema
-INSERT INTO storage.buckets (id, name, public) VALUES ('property-images', 'property-images', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Storage Policies: Public reading
-CREATE POLICY "Property Images are publicly accessible."
-  ON storage.objects FOR SELECT
-  USING ( bucket_id = 'property-images' );
-
--- Storage Policies: Authenticated users can upload (Ideally restrict to Landlords via RLS, but bucket level is done here)
-CREATE POLICY "Users can upload property images."
-  ON storage.objects FOR INSERT
-  WITH CHECK (
-    bucket_id = 'property-images' AND 
-    auth.role() = 'authenticated'
-  );
-
-CREATE POLICY "Users can delete their own images."
-  ON storage.objects FOR DELETE
-  USING (
-    bucket_id = 'property-images' AND
-    auth.uid() = owner
-  );
-
-
--- ==============================================================================
--- 7. CHAT: CONVERSATIONS TABLE
--- One row per unique pair. DB trigger keeps last_message_text in sync.
--- ==============================================================================
-
-CREATE TABLE public.conversations (
-  id                 UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  participant_a_id   UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  participant_b_id   UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  last_message_text  TEXT,
-  last_message_at    TIMESTAMPTZ DEFAULT NOW(),
-  created_at         TIMESTAMPTZ DEFAULT NOW(),
-  -- Prevent duplicate conversations between the same two users
-  UNIQUE(participant_a_id, participant_b_id)
-);
-
--- Indexes for fast participant lookups and sorting
-CREATE INDEX idx_conversations_participant_a ON public.conversations(participant_a_id);
-CREATE INDEX idx_conversations_participant_b ON public.conversations(participant_b_id);
-CREATE INDEX idx_conversations_last_message  ON public.conversations(last_message_at DESC);
-
-ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view their own conversations."
-  ON public.conversations FOR SELECT
-  USING (auth.uid() = participant_a_id OR auth.uid() = participant_b_id);
-
-CREATE POLICY "Users can create conversations."
-  ON public.conversations FOR INSERT
-  WITH CHECK (auth.uid() = participant_a_id OR auth.uid() = participant_b_id);
-
-
--- ==============================================================================
--- 8. CHAT: MESSAGES TABLE
--- Separate row per message. Indexed for fast conversation thread loading.
--- ==============================================================================
-
-CREATE TABLE public.messages (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
-  sender_id       UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  content         TEXT NOT NULL,
-  is_read         BOOLEAN DEFAULT false,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Composite index: fetch all messages in a conversation sorted chronologically
-CREATE INDEX idx_messages_conversation ON public.messages(conversation_id, created_at ASC);
-CREATE INDEX idx_messages_sender       ON public.messages(sender_id);
-
-ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-
--- Users can only read messages from conversations they belong to
-CREATE POLICY "Users can view messages in their conversations."
-  ON public.messages FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.conversations c
-      WHERE c.id = conversation_id
-        AND (c.participant_a_id = auth.uid() OR c.participant_b_id = auth.uid())
-    )
-  );
-
--- Users can only send messages in their own conversations as themselves
-CREATE POLICY "Users can send messages in their conversations."
-  ON public.messages FOR INSERT
-  WITH CHECK (
-    auth.uid() = sender_id AND
-    EXISTS (
-      SELECT 1 FROM public.conversations c
-      WHERE c.id = conversation_id
-        AND (c.participant_a_id = auth.uid() OR c.participant_b_id = auth.uid())
-    )
-  );
-
--- Users can mark messages as read
-CREATE POLICY "Users can update read status of messages."
-  ON public.messages FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.conversations c
-      WHERE c.id = conversation_id
-        AND (c.participant_a_id = auth.uid() OR c.participant_b_id = auth.uid())
-    )
-  );
-
--- DB Trigger: auto-update conversation's last_message_text on every new message
--- This removes the need for a second write from the client
-CREATE OR REPLACE FUNCTION public.update_conversation_last_message()
-RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE public.conversations
-  SET
-    last_message_text = NEW.content,
-    last_message_at   = NEW.created_at
-  WHERE id = NEW.conversation_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER on_new_message
-  AFTER INSERT ON public.messages
-  FOR EACH ROW EXECUTE PROCEDURE public.update_conversation_last_message();
-
--- Enable Supabase Realtime on messages (required for live chat subscription)
-ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
-
-
--- ==============================================================================
--- 9. MAINTENANCE REQUESTS
--- ==============================================================================
-
-CREATE TABLE public.maintenance_requests (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  tenant_id   UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  category    TEXT NOT NULL,
-  description TEXT NOT NULL,
-  photos      TEXT[] DEFAULT '{}',
-  status      TEXT DEFAULT 'pending'
-              CHECK (status IN ('pending', 'in_progress', 'resolved')),
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_maintenance_tenant ON public.maintenance_requests(tenant_id);
-
-ALTER TABLE public.maintenance_requests ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Tenants can manage their own maintenance requests."
-  ON public.maintenance_requests FOR ALL
-  USING (auth.uid() = tenant_id);
-
-
--- ==============================================================================
--- 10. COMPLAINT REQUESTS
--- ==============================================================================
-
-CREATE TABLE public.complaint_requests (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  category    TEXT NOT NULL,
-  description TEXT NOT NULL,
-  photos      TEXT[] DEFAULT '{}',
-  status      TEXT DEFAULT 'open'
-              CHECK (status IN ('open', 'under_review', 'resolved')),
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_complaints_user ON public.complaint_requests(user_id);
-
-ALTER TABLE public.complaint_requests ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can manage their own complaints."
-  ON public.complaint_requests FOR ALL
-  USING (auth.uid() = user_id);
-
-
--- ==============================================================================
--- 11. BANK ACCOUNTS (Landlords)
--- One bank account per landlord enforced by UNIQUE(user_id)
--- ==============================================================================
-
 CREATE TABLE public.bank_accounts (
-  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id        UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE UNIQUE,
-  bank_name      TEXT NOT NULL,
-  account_number TEXT NOT NULL,
-  account_name   TEXT NOT NULL,
-  created_at     TIMESTAMPTZ DEFAULT NOW(),
-  updated_at     TIMESTAMPTZ DEFAULT NOW()
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  bank_name text NOT NULL,
+  account_number text NOT NULL,
+  account_name text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  paystack_recipient_code text,
+  paystack_recipient_id text,
+  bank_code text,
+  CONSTRAINT bank_accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT bank_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
-
-ALTER TABLE public.bank_accounts ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Landlords can manage their own bank account."
-  ON public.bank_accounts FOR ALL
-  USING (auth.uid() = user_id);
-
-
--- ==============================================================================
--- 12. REQUEST IMAGES STORAGE BUCKET
--- Private bucket — only the owner can view their own uploads
--- ==============================================================================
-
-INSERT INTO storage.buckets (id, name, public) VALUES ('request-images', 'request-images', false)
-ON CONFLICT (id) DO NOTHING;
-
-CREATE POLICY "Authenticated users can upload request images."
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'request-images' AND auth.role() = 'authenticated');
-
-CREATE POLICY "Users can view their own request images."
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'request-images' AND auth.uid() = owner);
-
-CREATE POLICY "Users can delete their own request images."
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'request-images' AND auth.uid() = owner);
-
-
--- ==============================================================================
--- 13. USER BIO DATA
--- Stores additional info like occupation, next of kin, business details
--- ==============================================================================
-
+CREATE TABLE public.complaint_requests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  category text NOT NULL,
+  description text NOT NULL,
+  photos ARRAY DEFAULT '{}'::text[],
+  status text DEFAULT 'open'::text CHECK (status = ANY (ARRAY['open'::text, 'under_review'::text, 'resolved'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT complaint_requests_pkey PRIMARY KEY (id),
+  CONSTRAINT complaint_requests_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.conversations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  participant_a_id uuid NOT NULL,
+  participant_b_id uuid NOT NULL,
+  last_message_text text,
+  last_message_at timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT conversations_pkey PRIMARY KEY (id),
+  CONSTRAINT conversations_participant_a_id_fkey FOREIGN KEY (participant_a_id) REFERENCES public.users(id),
+  CONSTRAINT conversations_participant_b_id_fkey FOREIGN KEY (participant_b_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.credit_transactions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  type text NOT NULL CHECK (type = ANY (ARRAY['topup'::text, 'unlock'::text])),
+  credits numeric NOT NULL,
+  naira_amount numeric,
+  paystack_reference text UNIQUE,
+  property_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT credit_transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT credit_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT credit_transactions_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id)
+);
+CREATE TABLE public.favorites (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  property_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT favorites_pkey PRIMARY KEY (id),
+  CONSTRAINT favorites_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT favorites_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id)
+);
+CREATE TABLE public.inspection_bookings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  renter_id uuid NOT NULL,
+  property_id uuid NOT NULL,
+  amount numeric NOT NULL DEFAULT 2000.00,
+  preferred_date date NOT NULL,
+  preferred_time text NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'cancelled'::text])),
+  paystack_reference text UNIQUE,
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  whatsapp_number text,
+  reminder_sent boolean DEFAULT false,
+  CONSTRAINT inspection_bookings_pkey PRIMARY KEY (id),
+  CONSTRAINT inspection_bookings_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id),
+  CONSTRAINT inspection_bookings_renter_id_fkey FOREIGN KEY (renter_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.landlord_agents (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  landlord_id uuid NOT NULL,
+  agent_id uuid,
+  invite_code text NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'active'::text, 'revoked'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  accepted_at timestamp with time zone,
+  CONSTRAINT landlord_agents_pkey PRIMARY KEY (id),
+  CONSTRAINT landlord_agents_landlord_id_fkey FOREIGN KEY (landlord_id) REFERENCES public.users(id),
+  CONSTRAINT landlord_agents_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.maintenance_requests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  category text NOT NULL,
+  description text NOT NULL,
+  photos ARRAY DEFAULT '{}'::text[],
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'resolved'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT maintenance_requests_pkey PRIMARY KEY (id),
+  CONSTRAINT maintenance_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  conversation_id uuid NOT NULL,
+  sender_id uuid NOT NULL,
+  content text NOT NULL,
+  is_read boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT messages_pkey PRIMARY KEY (id),
+  CONSTRAINT messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
+  CONSTRAINT messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.neighbourhood_insights (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  state text NOT NULL,
+  lga text NOT NULL,
+  summary text,
+  vibe text,
+  power_supply text,
+  transport text,
+  safety text,
+  schools text,
+  markets text,
+  generated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT neighbourhood_insights_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.notification_queue (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  recipient_phone text NOT NULL,
+  message_body text NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text])),
+  attempts integer DEFAULT 0,
+  max_attempts integer DEFAULT 3,
+  last_error text,
+  metadata jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notification_queue_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.notifications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  type text NOT NULL CHECK (type = ANY (ARRAY['new_application'::text, 'application_accepted'::text, 'application_declined'::text, 'payment_received'::text, 'rental_confirmed'::text, 'agreement_signed'::text, 'system'::text])),
+  title text NOT NULL,
+  message text NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb,
+  read boolean DEFAULT false,
+  action_url text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notifications_pkey PRIMARY KEY (id),
+  CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.payment_accounts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  bank_account_id uuid NOT NULL,
+  paystack_subaccount_code text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  paystack_recipient_code text,
+  CONSTRAINT payment_accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT payment_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT payment_accounts_bank_account_id_fkey FOREIGN KEY (bank_account_id) REFERENCES public.bank_accounts(id)
+);
+CREATE TABLE public.payments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  type text NOT NULL CHECK (type = ANY (ARRAY['membership'::text, 'rent'::text])),
+  amount numeric NOT NULL,
+  paystack_reference text NOT NULL UNIQUE,
+  paystack_status text,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'successful'::text, 'failed'::text, 'refunded'::text])),
+  metadata jsonb DEFAULT '{}'::jsonb,
+  paid_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  rental_id uuid,
+  paystack_reference_used text,
+  CONSTRAINT payments_pkey PRIMARY KEY (id),
+  CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT payments_rental_id_fkey FOREIGN KEY (rental_id) REFERENCES public.rentals(id)
+);
+CREATE TABLE public.payouts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  rental_id uuid NOT NULL,
+  owner_id uuid NOT NULL,
+  amount numeric NOT NULL,
+  platform_fee numeric NOT NULL,
+  transfer_reference text NOT NULL UNIQUE,
+  transfer_code text,
+  paystack_recipient_code text NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'success'::text, 'failed'::text, 'reversed'::text])),
+  initiated_at timestamp with time zone DEFAULT now(),
+  completed_at timestamp with time zone,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  CONSTRAINT payouts_pkey PRIMARY KEY (id),
+  CONSTRAINT payouts_rental_id_fkey FOREIGN KEY (rental_id) REFERENCES public.rentals(id),
+  CONSTRAINT payouts_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.price_analyses (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  property_id uuid NOT NULL UNIQUE,
+  verdict text CHECK (verdict = ANY (ARRAY['fair'::text, 'above_average'::text, 'below_average'::text, 'suspicious'::text])),
+  badge text,
+  warning text,
+  summary text,
+  average_price numeric,
+  price_range_low numeric,
+  price_range_high numeric,
+  confidence text CHECK (confidence = ANY (ARRAY['high'::text, 'medium'::text, 'low'::text])),
+  comparables_count integer DEFAULT 0,
+  analysed_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT price_analyses_pkey PRIMARY KEY (id),
+  CONSTRAINT price_analyses_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id)
+);
+CREATE TABLE public.properties (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  description text NOT NULL,
+  price numeric NOT NULL,
+  location text NOT NULL,
+  type text NOT NULL,
+  images ARRAY DEFAULT '{}'::text[],
+  amenities ARRAY DEFAULT '{}'::text[],
+  landlord_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  listing_purpose text DEFAULT 'rent'::text CHECK (listing_purpose = ANY (ARRAY['rent'::text, 'sale'::text])),
+  billing_period text DEFAULT 'yearly'::text CHECK (billing_period = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text])),
+  state text,
+  lga text,
+  landmark text,
+  bedrooms integer DEFAULT 0,
+  bathrooms integer DEFAULT 0,
+  toilets integer DEFAULT 0,
+  furnishing text DEFAULT 'unfurnished'::text CHECK (furnishing = ANY (ARRAY['furnished'::text, 'semi-furnished'::text, 'unfurnished'::text])),
+  parking boolean DEFAULT false,
+  availability_date date DEFAULT CURRENT_DATE,
+  status text DEFAULT 'available'::text CHECK (status = ANY (ARRAY['available'::text, 'taken'::text])),
+  agency_fee_percentage numeric DEFAULT 0,
+  caution_fee numeric DEFAULT 0,
+  legal_fee numeric DEFAULT 0,
+  service_fee_percentage numeric DEFAULT 1.5,
+  total_price numeric,
+  agent_id uuid,
+  view_count bigint DEFAULT 0,
+  video_url text,
+  has_multiple_units boolean DEFAULT false,
+  units_count integer DEFAULT 1,
+  land_size numeric,
+  land_measurement_unit text CHECK (land_measurement_unit = ANY (ARRAY['plots'::text, 'acres'::text])),
+  CONSTRAINT properties_pkey PRIMARY KEY (id),
+  CONSTRAINT properties_landlord_id_fkey FOREIGN KEY (landlord_id) REFERENCES public.users(id),
+  CONSTRAINT properties_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.property_applications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  property_id uuid NOT NULL,
+  renter_id uuid NOT NULL,
+  owner_id uuid NOT NULL,
+  move_in_date date NOT NULL,
+  message text NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'declined'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT property_applications_pkey PRIMARY KEY (id),
+  CONSTRAINT property_applications_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id),
+  CONSTRAINT property_applications_renter_id_fkey FOREIGN KEY (renter_id) REFERENCES public.users(id),
+  CONSTRAINT property_applications_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.property_unlocks (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  property_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT property_unlocks_pkey PRIMARY KEY (id),
+  CONSTRAINT property_unlocks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT property_unlocks_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id)
+);
+CREATE TABLE public.property_views (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  property_id uuid NOT NULL,
+  viewer_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT property_views_pkey PRIMARY KEY (id),
+  CONSTRAINT property_views_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id),
+  CONSTRAINT property_views_viewer_id_fkey FOREIGN KEY (viewer_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.rentals (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  application_id uuid,
+  property_id uuid NOT NULL,
+  renter_id uuid NOT NULL,
+  owner_id uuid NOT NULL,
+  amount numeric NOT NULL,
+  platform_fee numeric NOT NULL,
+  owner_payout numeric NOT NULL,
+  paystack_reference text NOT NULL UNIQUE,
+  status text DEFAULT 'awaiting_payment'::text CHECK (status = ANY (ARRAY['awaiting_payment'::text, 'awaiting_confirmation'::text, 'confirmed'::text, 'disputed'::text, 'released'::text, 'refunded'::text])),
+  confirmation_deadline timestamp with time zone,
+  transfer_reference text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  active_paystack_reference text,
+  CONSTRAINT rentals_pkey PRIMARY KEY (id),
+  CONSTRAINT rentals_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id),
+  CONSTRAINT rentals_renter_id_fkey FOREIGN KEY (renter_id) REFERENCES public.users(id),
+  CONSTRAINT rentals_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id),
+  CONSTRAINT rentals_application_id_fkey FOREIGN KEY (application_id) REFERENCES public.property_applications(id)
+);
+CREATE TABLE public.subscriptions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  price numeric NOT NULL,
+  features ARRAY DEFAULT '{}'::text[],
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT subscriptions_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.tenancy_agreements (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  rental_id uuid NOT NULL,
+  property_id uuid NOT NULL,
+  owner_id uuid NOT NULL,
+  renter_id uuid NOT NULL,
+  agreement_text text NOT NULL,
+  custom_clauses ARRAY DEFAULT '{}'::text[],
+  uploaded_pdf_url text,
+  owner_signed_at timestamp with time zone,
+  renter_signed_at timestamp with time zone,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'owner_signed'::text, 'fully_signed'::text, 'voided'::text])),
+  pdf_url text,
+  created_at timestamp with time zone DEFAULT now(),
+  generation_type text DEFAULT 'ai'::text CHECK (generation_type = ANY (ARRAY['ai'::text, 'manual'::text])),
+  CONSTRAINT tenancy_agreements_pkey PRIMARY KEY (id),
+  CONSTRAINT tenancy_agreements_rental_id_fkey FOREIGN KEY (rental_id) REFERENCES public.rentals(id),
+  CONSTRAINT tenancy_agreements_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id),
+  CONSTRAINT tenancy_agreements_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id),
+  CONSTRAINT tenancy_agreements_renter_id_fkey FOREIGN KEY (renter_id) REFERENCES public.users(id)
+);
 CREATE TABLE public.user_biodata (
-  id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
-  phone_number TEXT,
-  dob DATE,
-  gender TEXT,
-  profile_photo TEXT,
-  id_type TEXT,
-  id_number TEXT,
-  id_front_image TEXT,
-  id_back_image TEXT,
-  employment_status TEXT,
-  employer_name TEXT,
-  monthly_income_range TEXT,
-  next_of_kin_name TEXT,
-  next_of_kin_phone TEXT,
-  next_of_kin_relationship TEXT,
-  business_name TEXT,
-  cac_number TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  id uuid NOT NULL,
+  phone_number text,
+  dob date,
+  gender text,
+  profile_photo text,
+  id_type text,
+  id_number text,
+  id_front_image text,
+  id_back_image text,
+  employment_status text,
+  employer_name text,
+  monthly_income_range text,
+  next_of_kin_name text,
+  next_of_kin_phone text,
+  next_of_kin_relationship text,
+  business_name text,
+  cac_number text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_biodata_pkey PRIMARY KEY (id),
+  CONSTRAINT user_biodata_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
 );
-
-ALTER TABLE public.user_biodata ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view their own biodata."
-  ON public.user_biodata FOR SELECT
-  USING (auth.uid() = id);
-
-CREATE POLICY "Users can insert/update their own biodata."
-  ON public.user_biodata FOR ALL
-  USING (auth.uid() = id);
-
-
+CREATE TABLE public.user_credits (
+  user_id uuid NOT NULL,
+  balance numeric NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_credits_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_credits_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.users (
+  id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  first_name text,
+  last_name text,
+  role USER-DEFINED DEFAULT 'TENANT'::user_role,
+  is_verified boolean DEFAULT false,
+  smile_job_id text,
+  id_number text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  completed_biodata boolean NOT NULL DEFAULT false,
+  is_verified_renter boolean DEFAULT false,
+  membership_paid_at timestamp with time zone,
+  push_token text,
+  push_notifications_enabled boolean DEFAULT true,
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);

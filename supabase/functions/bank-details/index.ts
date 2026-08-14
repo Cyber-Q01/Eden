@@ -51,6 +51,13 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+function createAdminClient() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -58,39 +65,185 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createUserClient(req);
+    const supabaseAdmin = createAdminClient();
     const userId = await getUserId(req);
 
-    // ── GET: Fetch bank details ─────────────────────────────────────────
+    // ── GET: Fetch bank details or external bank data ───────────────────
     if (req.method === 'GET') {
+      const url = new URL(req.url);
+      const action = url.searchParams.get('action');
+
+      // Action: list_banks (from Paystack)
+      if (action === 'list_banks') {
+        const res = await fetch('https://api.paystack.co/bank?country=nigeria', {
+          headers: { Authorization: `Bearer ${Deno.env.get('PAYSTACK_SECRET_KEY')}` }
+        });
+        const data = await res.json();
+        return jsonResponse(data.data || []);
+      }
+
+      // Action: resolve (from Paystack)
+      if (action === 'resolve') {
+        const accountNumber = url.searchParams.get('account_number');
+        const bankCode = url.searchParams.get('bank_code');
+        const secretKey = Deno.env.get('PAYSTACK_SECRET_KEY');
+        const testBankCode = '001';
+        // I have to change the bankCode fromm testBankcode to bankCode in prod 
+
+        console.log(`[Resolve] Account: ${accountNumber}, Bank: ${bankCode}, SecretKey exists: ${!!secretKey}`);
+
+        if (!accountNumber || !bankCode) {
+          return errorResponse('Missing account_number or bank_code');
+        }
+
+        const res = await fetch(`https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${testBankCode}`, {
+          headers: { Authorization: `Bearer ${secretKey}` }
+        });
+
+        const data = await res.json();
+        console.log(`[Resolve] Paystack status: ${data.status}, message: ${data.message}`);
+
+        if (!data.status) {
+          return errorResponse(data.message || 'Could not resolve account', 400);
+        }
+
+        return jsonResponse(data.data);
+      }
+
+      // Default: Fetch saved bank details from DB
       const { data, error } = await supabase
         .from('bank_accounts')
         .select('*')
         .eq('user_id', userId)
         .single();
 
-      // PGRST116 = no rows found — not an error for us
       if (error && error.code !== 'PGRST116') return errorResponse(error.message, 500);
       return jsonResponse(data ?? null);
     }
 
-    // ── POST: Upsert bank details ───────────────────────────────────────
+    // ── POST: Upsert bank details & Create Subaccount ──────────────────
     if (req.method === 'POST') {
-      const { bank_name, account_number, account_name } = await req.json();
+      const { bank_name, account_number, account_name, bank_code } = await req.json();
 
-      if (!bank_name || !account_number || !account_name) {
-        return errorResponse('Missing required fields: bank_name, account_number, account_name');
+      console.log(`[POST] Upserting bank for user: ${userId}, bank: ${bank_name}`);
+
+      if (!bank_name || !account_number || !account_name || !bank_code) {
+        return errorResponse('Missing required fields');
       }
 
-      const { error } = await supabase
+      // 1. Upsert into bank_accounts
+      const { data: bankData, error: bankError } = await supabase
         .from('bank_accounts')
         .upsert({
           user_id: userId,
           bank_name,
           account_number,
           account_name,
-        }, { onConflict: 'user_id' });
+          bank_code,
+        }, { onConflict: 'user_id' })
+        .select()
+        .single();
 
-      if (error) return errorResponse(error.message, 500);
+      if (bankError) {
+        console.error('[POST] bank_accounts upsert error:', bankError);
+        return errorResponse(`Database Error (bank_accounts): ${bankError.message}`, 500);
+      }
+
+      console.log('[POST] bank_accounts upsert success:', bankData.id);
+
+      // 2. Fetch User Info for Paystack Subaccount
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('first_name, last_name')
+        .eq('id', userId)
+        .single();
+      
+      if (profileError) console.warn('[POST] Profile fetch error:', profileError);
+
+      const { data: biodata } = await supabase
+        .from('user_biodata')
+        .select('business_name')
+        .eq('id', userId)
+        .single();
+
+      const businessName = biodata?.business_name || `${profile?.first_name} ${profile?.last_name}` || 'EdenHome Landlord';
+      console.log(`[POST] Creating subaccount for business: ${businessName}`);
+
+      // 3. Create Paystack Subaccount
+      try {
+        const secretKey = Deno.env.get('PAYSTACK_SECRET_KEY');
+        const paystackRes = await fetch('https://api.paystack.co/subaccount', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            business_name: businessName,
+            settlement_bank: bank_code,
+            account_number: account_number,
+            percentage_charge: 3, // Taking 3% for EdenHome service fee
+          }),
+        });
+
+        const paystackData = await paystackRes.json();
+        console.log(`[POST] Paystack subaccount status: ${paystackData.status}`);
+
+        if (paystackData.status) {
+          const subaccountCode = paystackData.data.subaccount_code;
+          console.log(`[POST] Storing subaccount code: ${subaccountCode}`);
+
+          // 3b. Create Paystack Transfer Recipient (needed for the /transfer endpoint used in release-payments)
+          console.log('[POST] Creating transfer recipient...');
+          const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${secretKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type: 'nuban',
+              name: account_name,
+              account_number: account_number,
+              bank_code: bank_code,
+              currency: 'NGN',
+              metadata: {
+                user_id: userId,
+              }
+            }),
+          });
+
+          const recipientData = await recipientRes.json();
+          let recipientCode = null;
+          if (recipientData.status) {
+            recipientCode = recipientData.data.recipient_code;
+            console.log(`[POST] Transfer recipient created: ${recipientCode}`);
+          } else {
+            console.error('[POST] Paystack Recipient Error:', recipientData.message);
+          }
+
+          // 4. Store Subaccount & Recipient Code
+          const { error: subError } = await supabaseAdmin
+            .from('payment_accounts')
+            .upsert({
+              user_id: userId,
+              bank_account_id: bankData.id,
+              paystack_subaccount_code: subaccountCode,
+              paystack_recipient_code: recipientCode,
+            }, { onConflict: 'user_id' });
+
+          if (subError) {
+            console.error('[POST] payment_accounts upsert error:', subError);
+          }
+        } else {
+          console.error('[POST] Paystack Subaccount Error:', paystackData.message);
+          return errorResponse(`Paystack Error: ${paystackData.message}`, 400);
+        }
+      } catch (e) {
+        console.error('[POST] Paystack API Exception:', e.message);
+        return errorResponse(`API Exception: ${e.message}`, 500);
+      }
+
       return jsonResponse({ success: true });
     }
 

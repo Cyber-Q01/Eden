@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
-import { handleError } from '../lib/errorHandler';
+import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
+import { useAuth } from '../context/AuthContext';
 import { callEdgeFunction } from '../lib/api';
+import { handleError } from '../lib/errorHandler';
+import { supabase } from '../lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type Message = {
     id: string;
@@ -21,58 +22,50 @@ export type Conversation = {
     last_message_text: string | null;
     last_message_at: string;
     created_at: string;
-    // joined user info
-    participant_a: { 
+    participant_a: {
         id: string;
-        first_name: string; 
+        first_name: string;
         last_name: string;
         email: string;
         user_biodata: { profile_photo: string | null } | null;
     } | null;
-    participant_b: { 
+    participant_b: {
         id: string;
-        first_name: string; 
+        first_name: string;
         last_name: string;
         email: string;
         user_biodata: { profile_photo: string | null } | null;
     } | null;
 };
 
-// ── Conversation list hook ──────────────────────────────────────────────────
 export const useChat = () => {
     const { user } = useAuth();
     const { showError } = useToast();
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+    const queryClient = useQueryClient();
 
-    const fetchConversations = async () => {
-        if (!user) return;
-        setLoading(true);
-        setError(false);
-        try {
-            const data = await callEdgeFunction<Conversation[]>('conversations', 'GET');
-            setConversations(data ?? []);
-        } catch (e) {
-            setError(true);
-            const err = await handleError(e);
-            showError(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { data: conversations, isLoading: loading, isError: error, refetch: fetchConversations } = useQuery({
+        queryKey: ['conversations', user?.id],
+        queryFn: async () => {
+            if (!user) return [];
+            try {
+                const data = await callEdgeFunction<Conversation[]>('conversations', 'GET');
+                return data ?? [];
+            } catch (e) {
+                const err = await handleError(e);
+                showError(err);
+                throw e;
+            }
+        },
+        enabled: !!user
+    });
 
-    useEffect(() => {
-        fetchConversations();
-    }, [user]);
-
-    // Start or get existing conversation with another user
     const startConversation = async (otherUserId: string) => {
         if (!user) return null;
         try {
             const data = await callEdgeFunction<{ id: string }>('conversations', 'POST', {
                 other_user_id: otherUserId,
             });
+            queryClient.invalidateQueries({ queryKey: ['conversations'] });
             return data?.id ?? null;
         } catch (e) {
             const err = await handleError(e);
@@ -81,42 +74,36 @@ export const useChat = () => {
         }
     };
 
-    return { conversations, loading, error, startConversation, refetch: fetchConversations };
+    return { conversations: conversations ?? [], loading, error, startConversation, refetch: fetchConversations };
 };
 
-// ── Messages hook (used inside a chat room screen) ─────────────────────────
 export const useMessages = (conversationId: string) => {
     const { user } = useAuth();
     const { showError } = useToast();
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+    const queryClient = useQueryClient();
 
-    const fetchMessages = async () => {
-        if (!conversationId) return;
-        setLoading(true);
-        setError(false);
-        try {
-            const data = await callEdgeFunction<Message[]>('messages', 'GET', null, {
-                conversation_id: conversationId,
-            });
-            setMessages(data ?? []);
-        } catch (e) {
-            setError(true);
-            const err = await handleError(e);
-            showError(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { data: messages, isLoading: loading, isError: error, refetch: fetchMessages } = useQuery({
+        queryKey: ['messages', conversationId],
+        queryFn: async () => {
+            if (!conversationId) return [];
+            try {
+                const data = await callEdgeFunction<Message[]>('messages', 'GET', null, {
+                    conversation_id: conversationId,
+                });
+                return data ?? [];
+            } catch (e) {
+                const err = await handleError(e);
+                showError(err);
+                throw e;
+            }
+        },
+        enabled: !!conversationId
+    });
 
     useEffect(() => {
         if (!conversationId) return;
 
-        // Initial fetch via edge function
-        fetchMessages();
-
-        // Supabase Realtime subscription (stays client-side — WebSocket)
+        // Supabase Realtime subscription
         const channel = supabase
             .channel(`messages:${conversationId}`)
             .on('postgres_changes', {
@@ -125,12 +112,15 @@ export const useMessages = (conversationId: string) => {
                 table: 'messages',
                 filter: `conversation_id=eq.${conversationId}`,
             }, (payload) => {
-                setMessages((prev) => [...prev, payload.new as Message]);
+                queryClient.setQueryData(['messages', conversationId], (old: Message[] | undefined) => {
+                    return [...(old || []), payload.new as Message];
+                });
+                queryClient.invalidateQueries({ queryKey: ['conversations'] });
             })
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, [conversationId]);
+    }, [conversationId, queryClient]);
 
     const sendMessage = async (content: string) => {
         if (!user || !content.trim() || !conversationId) return;
@@ -151,10 +141,11 @@ export const useMessages = (conversationId: string) => {
             await callEdgeFunction('messages', 'PUT', {
                 conversation_id: conversationId,
             });
+            queryClient.invalidateQueries({ queryKey: ['conversations'] });
         } catch (e) {
-            // Silently fail — marking read is non-critical
+            // Silently fail
         }
     };
 
-    return { messages, loading, error, sendMessage, markRead, refetch: fetchMessages };
+    return { messages: messages ?? [], loading, error, sendMessage, markRead, refetch: fetchMessages };
 };

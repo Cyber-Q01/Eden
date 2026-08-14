@@ -1,3 +1,4 @@
+import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -73,14 +74,16 @@ const RentPaymentScreen = () => {
                 setVerifying(false);
 
                 if (result?.status === 'successful') {
-                    // ✅ Payment confirmed — go to confirmation screen
+                    // ✅ Payment confirmed — go to PaymentSuccessScreen
                     router.replace({
-                        pathname: '/shared-screens/RentalConfirmationScreen',
+                        pathname: '/shared-screens/PaymentSuccessScreen',
                         params: {
-                            rental_id: result.rental_id,
-                            confirmation_deadline: result.confirmation_deadline,
-                            property_title: propertyTitle,
+                            txn_id: reference || 'TXN-' + Date.now(),
                             amount: amount.toString(),
+                            date: new Date().toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
+                            property: propertyTitle,
+                            rental_id: result.rental_id || rental_id,
+                            confirmation_deadline: result.confirmation_deadline || '',
                         },
                     });
                 } else {
@@ -137,8 +140,9 @@ const RentPaymentScreen = () => {
 
     return (
         <ScreenWrapper
+            disableKeyboardAvoidingView
             withScrollView={false}
-            style={[styles.container, { backgroundColor: colors.background }]}
+            style={{ backgroundColor: colors.background }}
         >
             {/* Header */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -192,6 +196,11 @@ const RentPaymentScreen = () => {
                     source={{ uri: paymentUrl }}
                     onNavigationStateChange={handleNavigationChange}
                     style={{ flex: 1 }}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    setSupportMultipleWindows={false}
+                    javaScriptCanOpenWindowsAutomatically={true}
+                    mixedContentMode="compatibility"
                     startInLoadingState
                     renderLoading={() => (
                         <View

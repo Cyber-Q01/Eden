@@ -4,10 +4,13 @@ import {
     Animated,
     Dimensions,
     FlatList,
+    KeyboardAvoidingView,
     Modal,
     PanResponder,
+    Platform,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     TouchableWithoutFeedback,
     View,
@@ -33,8 +36,17 @@ type Props = {
 
 const BottomSheetPicker = ({ visible, title, options, selectedValue, onSelect, onClose }: Props) => {
     const { colors } = useTheme();
+    const [searchQuery, setSearchQuery] = React.useState('');
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
     const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+    // Filter options based on search
+    const filteredOptions = React.useMemo(() => {
+        if (!searchQuery) return options || [];
+        return (options || []).filter(opt => 
+            opt.label.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [options, searchQuery]);
 
     const panResponder = useRef(
         PanResponder.create({
@@ -61,6 +73,7 @@ const BottomSheetPicker = ({ visible, title, options, selectedValue, onSelect, o
 
     useEffect(() => {
         if (visible) {
+            setSearchQuery(''); // Reset search on open
             Animated.parallel([
                 Animated.spring(translateY, {
                     toValue: 0,
@@ -132,35 +145,66 @@ const BottomSheetPicker = ({ visible, title, options, selectedValue, onSelect, o
                 <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
             </TouchableWithoutFeedback>
 
-            <Animated.View
-                style={[
-                    styles.sheet,
-                    { backgroundColor: colors.background, transform: [{ translateY }] },
-                ]}
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={styles.keyboardView}
             >
-                {/* Drag handle */}
-                <View {...panResponder.panHandlers} style={styles.dragArea}>
-                    <View style={[styles.handle, { backgroundColor: colors.border }]} />
-                </View>
+                <Animated.View
+                    style={[
+                        styles.sheet,
+                        { backgroundColor: colors.background, transform: [{ translateY }] },
+                    ]}
+                >
+                    {/* Drag handle */}
+                    <View {...panResponder.panHandlers} style={styles.dragArea}>
+                        <View style={[styles.handle, { backgroundColor: colors.border }]} />
+                    </View>
 
-                {/* Header */}
-                <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-                    <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}>
-                        <Ionicons name="close" size={22} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                </View>
+                    {/* Header with Search */}
+                    <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                        <View style={styles.headerTop}>
+                            <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+                            <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}>
+                                <Ionicons name="close" size={22} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="search" size={18} color={colors.textSecondary} />
+                            <TextInput
+                                style={[styles.searchInput, { color: colors.text }]}
+                                placeholder="Search banks..."
+                                placeholderTextColor={colors.textSecondary + '80'}
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                autoCorrect={false}
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                    <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
 
-                {/* Options */}
-                <FlatList
-                    data={options}
-                    keyExtractor={(item) => item.value}
-                    renderItem={renderItem}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    bounces={false}
-                />
-            </Animated.View>
+                    {/* Options */}
+                    <FlatList
+                        data={filteredOptions}
+                        keyExtractor={(item) => item.value}
+                        renderItem={renderItem}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        bounces={false}
+                        keyboardShouldPersistTaps="handled"
+                        ListEmptyComponent={
+                            <View style={styles.emptyContainer}>
+                                <Ionicons name="search-outline" size={48} color={colors.border} />
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No banks found</Text>
+                            </View>
+                        }
+                    />
+                </Animated.View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 };
@@ -170,6 +214,10 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.5)',
     },
+    keyboardView: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
     sheet: {
         position: 'absolute',
         bottom: 0,
@@ -177,7 +225,7 @@ const styles = StyleSheet.create({
         right: 0,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        maxHeight: SCREEN_HEIGHT * 0.7,
+        height: SCREEN_HEIGHT * 0.7,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.12,
@@ -194,12 +242,30 @@ const styles = StyleSheet.create({
         borderRadius: 2,
     },
     header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
         paddingHorizontal: 20,
         paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        height: 48,
+        borderRadius: 12,
+        borderWidth: 1,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '500',
+        height: '100%',
     },
     title: {
         fontSize: 17,
@@ -236,6 +302,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     optionText: {
+        fontSize: 15,
+        fontWeight: '500',
+    },
+    emptyContainer: {
+        padding: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+    },
+    emptyText: {
         fontSize: 15,
         fontWeight: '500',
     },

@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
         return jsonResponse(data);
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await serviceRoleClient
         .from('conversations')
         .select(`
           *,

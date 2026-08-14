@@ -1,10 +1,12 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+// supabase/functions/ai-assistant/index.ts
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 interface ChatMessage {
@@ -13,13 +15,13 @@ interface ChatMessage {
 }
 
 interface RequestBody {
-  type: "chat" | "neighbourhood" | "explain_clause" | "price_analysis" | "application_letter" | "generate_agreement";
+  type: "chat" | "neighbourhood" | "explain_clause" | "price_analysis" | "application_letter";
   messages?: ChatMessage[];
   state?: string;
   lga?: string;
   clause?: string;
   property_id?: string;
-  rental_id?: string;
+  name?: string;
   occupation?: string;
   move_reason?: string;
   family_size?: string;
@@ -27,16 +29,46 @@ interface RequestBody {
   property_location?: string;
 }
 
-const SYSTEM_PROMPT = `You are EdenHome AI, a helpful rental assistant for Nigeria. You help users with:
-- Rental prices in Nigerian cities (Lagos, Abuja, Port Harcourt, etc.)
-- Neighborhood safety and amenities
-- Tenant rights and responsibilities in Nigeria
-- Understanding rental terms (caution fee, agency fee, service charge)
-- What to look for when viewing properties
-- Red flags to avoid when renting
+const SYSTEM_PROMPT = `You are EdenHome AI, the official assistant for the EdenHome mobile app and an expert in the Nigerian rental market.
 
-Keep responses concise, friendly, and practical. Always use Nigerian context and currency (₦).
-If you don't know something specific, be honest and suggest they verify with local sources.`;
+EDENHOME APP KNOWLEDGE:
+- Purpose: Helping Nigerians find and secure quality rental properties with ease.
+- Service Wallet & Units: Users fund their "Service Wallet" via Paystack. 1 Service Unit costs ₦666 (includes 7.5% VAT).
+- Property Unlocks: Users spend 1 Service Unit to "unlock" the full address and landlord contact info of a property.
+- Verified Renters: Tenants can become "Verified Renters" to increase their chances of approval.
+- Applications: Formal rental applications are submitted directly through the app.
+
+AI HELP TOPICS:
+- Rental prices in Nigerian cities (Lagos, Abuja, Port Harcourt, etc.)
+- Neighborhood safety, traffic, and amenities (Insights)
+- Tenant rights, rental laws, and clause explanations
+- Drafting professional application letters for landlords
+- Understanding terms like caution fee, agency fee, and service charge
+
+GUIDELINES:
+- Use Nigerian context naturally (Self-con, Mini-flat, Mainland/Island, etc.).
+- Always use Naira (₦) for currency.
+- Be professional, warm, and concise.
+- If you don't know a property's specific details, suggest the user "unlock" it to contact the owner.`;
+
+// ✅ Model fallback configuration
+const MODELS = [
+  {
+    name: "Gemini 3.1 Flash",
+    endpoint: "gemini-3.1-flash",
+    description: "Primary model - high performance"
+  },
+  {
+    name: "Gemini 2.5 Flash",
+    endpoint: "gemini-2.5-flash",
+    description: "Secondary model - reliable backup"
+  },
+  {
+    name: "Gemini 2.5 Flash-Lite",
+    endpoint: "gemini-2.5-flash-lite",
+    description: "Tertiary model - budget-friendly"
+  }
+];
 
 function errorResponse(message: string, status = 400) {
   return new Response(JSON.stringify({ error: message }), {
@@ -103,47 +135,112 @@ async function setCache(service: any, key: string, type: string, payload: any, t
   await service.from("ai_cache").upsert({ cache_key: key, type, payload, expires_at: expiresAt });
 }
 
-async function callGemini(messages: ChatMessage[]): Promise<string> {
+// ✅ Enhanced function with fallback models
+async function callGeminiWithFallback(messages: ChatMessage[]): Promise<string> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
-  // Format messages for Gemini API
-  const contents = messages.map(msg => ({
-    role: msg.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: msg.content }]
+  const messagesWithSystem = [
+    { role: "user" as const, content: SYSTEM_PROMPT },
+    { role: "model" as const, content: "Understood. I'm ready to help with Nigerian rental questions." },
+    ...messages,
+  ];
+
+  const contents = messagesWithSystem.map((msg) => ({
+    role: msg.role === "assistant" ? "model" : msg.role === "model" ? "model" : "user",
+    parts: [{ text: msg.content }],
   }));
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 4096,
-        },
-      }),
-    }
-  );
+  // ✅ Try each model in sequence until one works
+  for (let i = 0; i < MODELS.length; i++) {
+    const model = MODELS[i];
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Gemini API Error:', errorText);
-    throw new Error(`Gemini API error: ${response.status}`);
+    try {
+      console.log(`[AI-ASSISTANT]: Attempting ${model.name} (${model.description})`);
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model.endpoint}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: contents,
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 2048,
+            },
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`[AI-ASSISTANT]: ${model.name} failed:`, error);
+
+        // ✅ If this isn't the last model, continue to next fallback
+        if (i < MODELS.length - 1) {
+          console.log(`[AI-ASSISTANT]: Falling back to ${MODELS[i + 1].name}...`);
+          continue;
+        }
+
+        // ✅ If this is the last model, throw the error
+        throw new Error(`All models failed. Last error: ${error}`);
+      }
+
+      const data = await response.json();
+
+      // ✅ Handle safety filters
+      if (data.promptFeedback?.blockReason) {
+        console.warn(`[AI-ASSISTANT]: ${model.name} blocked by safety filters`);
+
+        if (i < MODELS.length - 1) {
+          console.log(`[AI-ASSISTANT]: Trying ${MODELS[i + 1].name} for safety bypass...`);
+          continue;
+        }
+
+        return "Response blocked by safety filters. Please rephrase your question.";
+      }
+
+      // ✅ Extract response text
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!reply) {
+        console.error(`[AI-ASSISTANT]: Empty response from ${model.name}:`, JSON.stringify(data));
+
+        if (i < MODELS.length - 1) {
+          console.log(`[AI-ASSISTANT]: Empty response, trying ${MODELS[i + 1].name}...`);
+          continue;
+        }
+
+        return "I couldn't generate a response. Please try again.";
+      }
+
+      // ✅ Success! Log which model worked
+      console.log(`[AI-ASSISTANT]: Success with ${model.name}`);
+      return reply.trim();
+
+    } catch (error) {
+      console.error(`[AI-ASSISTANT]: ${model.name} error:`, error);
+
+      // ✅ If this isn't the last model, continue to next fallback
+      if (i < MODELS.length - 1) {
+        console.log(`[AI-ASSISTANT]: ${model.name} failed, trying ${MODELS[i + 1].name}...`);
+        continue;
+      }
+
+      // ✅ If this is the last model, throw the error
+      throw new Error(`All AI models failed. Please try again later.`);
+    }
   }
 
-  const data = await response.json();
-  const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  return reply?.trim() ?? "";
+  // ✅ This should never be reached, but just in case
+  throw new Error("All AI models failed unexpectedly.");
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const userClient = createUserClient(req);
@@ -154,9 +251,8 @@ serve(async (req) => {
     await enforceRateLimit(service, user.id);
 
     const body: RequestBody = await req.json();
-    const { type, messages, state, lga, clause, rental_id } = body;
+    const { type, messages, state, lga, clause } = body;
 
-    // ── Neighbourhood Insights ──────────────────────────────────────────────
     if (type === "neighbourhood" && state && lga) {
       const cacheKey = `nbh:${state}:${lga}`.toLowerCase();
       const cached = await getCache(service, cacheKey);
@@ -172,13 +268,13 @@ serve(async (req) => {
 
 Keep it practical and up-to-date.`;
 
-      const reply = await callGemini([{ role: "user", content: prompt }]);
+      // ✅ Use the new fallback function
+      const reply = await callGeminiWithFallback([{ role: "user", content: prompt }]);
       const result = { reply };
       await setCache(service, cacheKey, type, result);
       return jsonResponse(result);
     }
 
-    // ── Explain Clause ──────────────────────────────────────────────────────
     if (type === "explain_clause" && clause) {
       const prompt = `Explain this rental clause in simple terms for a Nigerian tenant:
 
@@ -192,13 +288,13 @@ Break down:
 
 Keep it clear and actionable.`;
 
-      const reply = await callGemini([{ role: "user", content: prompt }]);
-      return jsonResponse({ explanation: reply });
+      // ✅ Use the new fallback function
+      const reply = await callGeminiWithFallback([{ role: "user", content: prompt }]);
+      return jsonResponse({ reply });
     }
 
-    // ── Application Letter ──────────────────────────────────────────────────
     if (type === "application_letter") {
-      const { occupation, move_reason, family_size, property_title, property_location } = body;
+      const { name, occupation, move_reason, family_size, property_title, property_location } = body;
 
       if (!occupation || !property_title) {
         return errorResponse("Missing required fields: occupation and property_title");
@@ -208,6 +304,7 @@ Keep it clear and actionable.`;
 
 Property: ${property_title}
 Location: ${property_location}
+Applicant's Name: ${name || 'Akin Oladele'}
 Applicant's Occupation: ${occupation}
 ${move_reason ? `Reason for Moving: ${move_reason}` : ''}
 ${family_size ? `Household Size: ${family_size}` : ''}
@@ -215,102 +312,27 @@ ${family_size ? `Household Size: ${family_size}` : ''}
 Requirements:
 - Write in first person
 - Professional but warm and friendly tone
-- 150-200 words only
-- Introduce yourself briefly
+- strictly 150-200 words only
+- Introduce yourself briefly (e.g., "My name is ${name || 'Akin Oladele'}, and I am...")
 - Mention occupation and reliability
 - Express genuine interest in the property
 - Show you're a responsible tenant
 - Use Nigerian context naturally
+- Use the applicant's name (${name || 'Akin Oladele'}) to naturally sign off the letter at the end (e.g., "Best regards,\n${name || 'Akin Oladele'}")
 - NO placeholders like [Your Name] or [Date]
 - Do NOT include a subject line or greeting like "Dear Landlord"
 - Start directly with the introduction
 
 Write the message now:`;
 
-      const letter = await callGemini([{ role: "user", content: prompt }]);
+      // ✅ Use the new fallback function
+      const letter = await callGeminiWithFallback([{ role: "user", content: prompt }]);
       return jsonResponse({ letter: letter.trim() });
     }
 
-    // ── Generate Agreement ──────────────────────────────────────────────────
-    if (type === "generate_agreement") {
-      if (!rental_id) return errorResponse("Missing rental_id");
-
-      // Fetch rental, property, and parties info
-      const { data: rental, error: rError } = await service
-        .from('rental_applications')
-        .select(`
-          *,
-          property:properties!property_id (*),
-          renter:profiles!renter_id (first_name, last_name, email),
-          owner:profiles!owner_id (first_name, last_name, email)
-        `)
-        .eq('id', rental_id)
-        .single();
-
-      if (rError || !rental) {
-        console.error('Rental Fetch Error:', rError);
-        return errorResponse("Could not find rental details to generate agreement.");
-      }
-
-      const prompt = `Generate a formal and legally binding Tenancy Agreement for a property in Nigeria.
-      
-PROPERTY DETAILS:
-- Title: ${rental.property.title}
-- Location: ${rental.property.location}
-- Type: ${rental.property.type}
-- Rent: ₦${rental.property.price.toLocaleString()} per year
-
-PARTIES:
-- Landlord (Owner): ${rental.owner.first_name} ${rental.owner.last_name}
-- Tenant (Renter): ${rental.renter.first_name} ${rental.renter.last_name}
-
-TENANCY TERMS:
-- Commencement Date: ${new Date(rental.move_in_date).toLocaleDateString()}
-- Term: One (1) Year
-- Rent Amount: ₦${rental.property.price.toLocaleString()}
-
-SECTIONS TO INCLUDE:
-1. Parties & Property Description
-2. Rent & Payments (including Caution Fee if applicable)
-3. Tenant's Covenants (Maintenance, Noise, No Subletting)
-4. Landlord's Covenants (Quiet Enjoyment, Major Repairs)
-5. Termination Clause
-6. Signatures Section
-
-INSTRUCTIONS:
-- Use professional Nigerian legal terminology.
-- Be clear and comprehensive.
-- Ensure all provided names and details are integrated.
-- Return the full agreement text in Markdown format.
-- DO NOT use placeholders like [Your Name].`;
-
-      const agreementText = await callGemini([{ role: "user", content: prompt }]);
-
-      // Save to tenancy_agreements
-      const { data: agreement, error: aError } = await service
-        .from('tenancy_agreements')
-        .upsert({
-          rental_id,
-          property_id: rental.property_id,
-          owner_id: rental.owner_id,
-          renter_id: rental.renter_id,
-          agreement_text: agreementText,
-          status: 'pending'
-        })
-        .select()
-        .single();
-
-      if (aError) {
-        console.error('Agreement Save Error:', aError);
-        return errorResponse("Agreement generated but could not be saved to the database.");
-      }
-
-      return jsonResponse({ agreement });
-    }
-
-    // ── Generic Chat ────────────────────────────────────────────────────────
     if (type === "chat" && messages) {
-      const reply = await callGemini(messages.slice(-10));
+      // ✅ Use the new fallback function
+      const reply = await callGeminiWithFallback(messages.slice(-10));
       return jsonResponse({ reply });
     }
 

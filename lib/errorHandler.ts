@@ -92,10 +92,20 @@ export async function handleError(error: any): Promise<AppError> {
     }
 
     const type = classifyError(error);
+    const friendly = ERROR_MAP[type];
+    const rawMessage = error?.message || String(error);
+
+    // If it's an unknown error but we have a specific message (e.g. from an Edge Function), 
+    // use that message instead of the generic "Something went wrong"
+    const displayMessage = (type === 'unknown' && rawMessage && !rawMessage.includes('Error'))
+        ? rawMessage
+        : friendly.message;
+
     return {
         type,
-        ...ERROR_MAP[type],
-        raw: error?.message || String(error),
+        title: friendly.title,
+        message: displayMessage,
+        raw: rawMessage,
     };
 }
 

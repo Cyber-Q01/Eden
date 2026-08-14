@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import ThemedTextInput from '../../components/ThemedTextInput';
 import { useTheme } from '../../context/ThemeContext';
 import { useChat } from '../../hooks/useChat';
 import { useProfile } from '../../hooks/useProfile';
@@ -10,17 +11,37 @@ import { useProfile } from '../../hooks/useProfile';
 const ChatScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
-    const { conversations, loading } = useChat();
+    const { conversations, loading, refetch } = useChat();
     const { profile } = useProfile();
+    const [searchQuery, setSearchQuery] = React.useState('');
+    const [isSearching, setIsSearching] = React.useState(false);
+
+    const filteredConversations = React.useMemo(() => {
+        if (!searchQuery) return conversations;
+        return conversations.filter((item: any) => {
+            const otherUser = item.participant_a?.id === profile?.id
+                ? item.participant_b
+                : item.participant_a;
+            const name = otherUser?.first_name || '';
+            const lastName = otherUser?.last_name || '';
+            return `${name} ${lastName}`.toLowerCase().includes(searchQuery.toLowerCase());
+        });
+    }, [conversations, searchQuery, profile]);
+
+    useFocusEffect(
+        useCallback(() => {
+            refetch();
+        }, [refetch])
+    );
 
     const renderChatItem = ({ item }: { item: any }) => {
         // Determine the other participant's details
         const otherUser = item.participant_a?.id === profile?.id
             ? item.participant_b
             : item.participant_a;
-        
-        const name = otherUser?.first_name 
-            ? `${otherUser.first_name} ${otherUser.last_name || ''}`.trim() 
+
+        const name = otherUser?.first_name
+            ? `${otherUser.first_name}`.trim()
             : 'User';
         const avatar = otherUser?.user_biodata?.profile_photo;
 
@@ -57,7 +78,7 @@ const ChatScreen = () => {
             <View style={styles.header}>
                 <View style={styles.userInfo}>
                     {profile?.user_biodata?.profile_photo ? (
-                         <Image
+                        <Image
                             source={{ uri: profile.user_biodata.profile_photo }}
                             style={[styles.userAvatar, { backgroundColor: colors.border }]}
                         />
@@ -69,12 +90,18 @@ const ChatScreen = () => {
                     )}
                     <View>
                         <Text style={[styles.greetingText, { color: colors.textSecondary }]}>Chat</Text>
-                        <Text style={[styles.userName, { color: colors.text }]}>{profile?.first_name} {profile?.last_name}</Text>
+                        <Text style={[styles.userName, { color: colors.text }]}>{profile?.first_name}</Text>
                     </View>
                 </View>
                 <View style={styles.headerActions}>
-                    <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.card }]}>
-                        <Ionicons name="search" size={20} color={colors.primary} />
+                    <TouchableOpacity 
+                        style={[styles.iconButton, { backgroundColor: isSearching ? colors.primary + '15' : colors.card }]}
+                        onPress={() => {
+                            setIsSearching(!isSearching);
+                            if (isSearching) setSearchQuery('');
+                        }}
+                    >
+                        <Ionicons name={isSearching ? "close" : "search"} size={20} color={colors.primary} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.iconButton, styles.plusButton, { backgroundColor: colors.primary }]}>
                         <Ionicons name="add" size={24} color="#FFF" />
@@ -82,17 +109,33 @@ const ChatScreen = () => {
                 </View>
             </View>
 
+            {isSearching && (
+                <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="search" size={18} color={colors.textSecondary} />
+                    <ThemedTextInput
+                        placeholder="Search conversations..."
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        autoFocus
+                        style={styles.searchInput}
+                        containerStyle={styles.searchInner}
+                    />
+                </View>
+            )}
+
             <View style={[styles.content, { backgroundColor: colors.card }]}>
                 <View style={styles.titleRow}>
                     <Text style={[styles.title, { color: colors.text }]}>Chats</Text>
                 </View>
                 {loading ? (
                     <ActivityIndicator size="large" color={colors.primary} />
-                ) : conversations.length === 0 ? (
-                    <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 40 }}>No conversations yet.</Text>
+                ) : filteredConversations.length === 0 ? (
+                    <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 40 }}>
+                        {searchQuery ? 'No conversations matching your search.' : 'No conversations yet.'}
+                    </Text>
                 ) : (
                     <FlatList
-                        data={conversations}
+                        data={filteredConversations}
                         renderItem={renderChatItem}
                         keyExtractor={item => item.id}
                         showsVerticalScrollIndicator={false}
@@ -252,6 +295,29 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 10,
         fontWeight: '800',
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 20,
+        marginBottom: 16,
+        paddingHorizontal: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        height: 48,
+        gap: 10,
+    },
+    searchInner: {
+        flex: 1,
+        height: '100%',
+        backgroundColor: 'transparent',
+        shadowOpacity: 0,
+        elevation: 0,
+        paddingHorizontal: 0,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
     },
 });
 

@@ -26,8 +26,17 @@ export async function callEdgeFunction<T = any>(
   // Build query string path if params provided
   let path = functionName;
   if (params && Object.keys(params).length > 0) {
-    const query = new URLSearchParams(params).toString();
-    path += `?${query}`;
+    const cleanParams: Record<string, string> = {};
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        cleanParams[key] = String(val);
+      }
+    });
+    
+    if (Object.keys(cleanParams).length > 0) {
+      const query = new URLSearchParams(cleanParams).toString();
+      path += `?${query}`;
+    }
   }
   // Ensure we have a valid session before invoking
   const { data: { session } } = await supabase.auth.getSession();
@@ -44,9 +53,6 @@ export async function callEdgeFunction<T = any>(
     const invokePromise = supabase.functions.invoke<T>(path, {
       method,
       body: body ?? undefined,
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
     });
 
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -62,12 +68,33 @@ export async function callEdgeFunction<T = any>(
     clearTimeout(timer!);
 
     if (error) {
-      // FunctionsHttpError carries a context with the response body
-      const message =
-        (error as any)?.context?.json?.error ||
-        error.message ||
-        'An unexpected error occurred.';
-      throw new Error(message);
+      let message = error.message;
+      const context = (error as any).context;
+
+      // Supabase's 'FunctionsHttpError' often hides the real error in 'context'
+      if (context instanceof Response) {
+        try {
+          const body = await context.json();
+          message = body.error || body.message || body.msg || message;
+        } catch {
+          try {
+            const text = await context.text();
+            if (text && text.length < 200) message = text;
+          } catch { /* ignore */ }
+        }
+      } else if (context && typeof context === 'object') {
+        // Handle cases where context is already parsed (older versions or custom)
+        const ctx = context as any;
+        message = ctx.error || ctx.message || ctx.json?.error || ctx.text || message;
+      }
+
+      // If we're still stuck with the generic message, fallback to a friendly default
+      if (message === 'Edge Function returned a non-2xx status code') {
+        message = 'Something went wrong. Please try again or contact support.';
+      }
+
+      console.log(`(api.ts) Extracted UX Error: ${message}`);
+      throw new Error(String(message));
     }
 
     return data as T;

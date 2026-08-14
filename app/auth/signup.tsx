@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import React, { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
@@ -17,17 +17,31 @@ const SignupScreen = () => {
     const { colors, isDark } = useTheme();
     const { showError, showSuccess } = useToast();
 
+    const { inviteCode } = useLocalSearchParams<{ inviteCode?: string }>();
     const [email, setEmail] = useState('');
-    const [fullName, setFullName] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [password, setPassword] = useState('');
-    const [selectedType, setSelectedType] = useState<'tenant' | 'landlord'>('tenant');
+    const [selectedType, setSelectedType] = useState<'tenant' | 'landlord' | 'agent'>(inviteCode ? 'agent' : 'tenant');
     const [agreed, setAgreed] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
 
+    useEffect(() => {
+        if (inviteCode) {
+            setSelectedType('agent');
+        }
+    }, [inviteCode]);
+
     const handleSignup = async () => {
+        if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim()) {
+            showError({ type: 'unknown', title: 'Missing Fields', message: 'All fields are required to create an account.' });
+            return;
+        }
+
         const error = validateAll([
-            { check: () => validateName(fullName, 'Full name') },
+            { check: () => validateName(firstName, 'First name') },
+            { check: () => validateName(lastName, 'Last name') },
             { check: () => validateEmail(email) },
             { check: () => validatePassword(password) },
         ]);
@@ -40,9 +54,8 @@ const SignupScreen = () => {
             return;
         }
 
-        const nameParts = fullName.trim().split(' ');
-        const cleanFirst = sanitizeName(nameParts[0]);
-        const cleanLast = sanitizeName(nameParts.slice(1).join(' ') || '');
+        const cleanFirst = sanitizeName(firstName);
+        const cleanLast = sanitizeName(lastName);
         const cleanEmail = sanitizeEmail(email);
 
         setLoading(true);
@@ -54,13 +67,26 @@ const SignupScreen = () => {
                     data: {
                         firstName: cleanFirst,
                         lastName: cleanLast,
+                        first_name: cleanFirst,
+                        last_name: cleanLast,
                         role: selectedType.toUpperCase()
                     }
                 }
             }));
             if (authError) throw authError;
             showSuccess('Check your email for the verification code.');
-            router.push({ pathname: '/auth/verification', params: { email: cleanEmail } });
+            
+            if (selectedType === 'agent') {
+                router.push({ 
+                    pathname: '/auth/verification', 
+                    params: { 
+                        email: cleanEmail,
+                        inviteCode: inviteCode 
+                    } 
+                });
+            } else {
+                router.push({ pathname: '/auth/verification', params: { email: cleanEmail } });
+            }
         } catch (e) {
             const err = await handleError(e);
             showError(err);
@@ -70,11 +96,16 @@ const SignupScreen = () => {
     };
 
     return (
-        <ScreenWrapper style={{ backgroundColor: colors.background }}>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScreenWrapper>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                style={{ backgroundColor: 'transparent' }}
+            >
                 <View style={styles.header}>
                     <Text style={[styles.mainTitle, { color: colors.text }]}>Create Account</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Eden-no agents, no stress</Text>
+                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Eden — no agents, no stress</Text>
                 </View>
 
                 <View style={styles.roleSelectionContainer}>
@@ -117,12 +148,20 @@ const SignupScreen = () => {
                 </View>
 
                 <View style={styles.formContainer}>
-                    <ThemedTextInput
-                        placeholder="Full Name"
-                        value={fullName}
-                        onChangeText={setFullName}
-                    // containerStyle={[styles.input, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    />
+                    <View style={styles.nameRow}>
+                        <ThemedTextInput
+                            placeholder="First Name"
+                            value={firstName}
+                            onChangeText={setFirstName}
+                            containerStyle={styles.nameInput}
+                        />
+                        <ThemedTextInput
+                            placeholder="Last Name"
+                            value={lastName}
+                            onChangeText={setLastName}
+                            containerStyle={styles.nameInput}
+                        />
+                    </View>
 
                     <ThemedTextInput
                         placeholder="Enter your email"
@@ -183,20 +222,24 @@ const SignupScreen = () => {
 const styles = StyleSheet.create({
     scrollContent: {
         paddingHorizontal: 24,
-        paddingBottom: 40,
-        paddingTop: 40,
+        paddingBottom: 48,
+        paddingTop: 60,
+        flexGrow: 1,
     },
     header: {
         alignItems: 'center',
         marginBottom: 32,
+        gap: 8,
     },
     mainTitle: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        marginBottom: 8,
+        fontSize: 28,
+        fontWeight: '800',
+        textAlign: 'center',
     },
     subtitle: {
-        fontSize: 16,
+        fontSize: 15,
+        textAlign: 'center',
+        lineHeight: 22,
     },
     roleSelectionContainer: {
         marginBottom: 32,
@@ -229,6 +272,13 @@ const styles = StyleSheet.create({
     },
     formContainer: {
         gap: 20,
+    },
+    nameRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    nameInput: {
+        flex: 1,
     },
     input: {
         borderRadius: 12,

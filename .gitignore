@@ -9,6 +9,10 @@ node_modules/
 .env.local
 dist/
 web-build/
+node_modules/
+supabase/
+*.sql 
+tests/load/
 expo-env.d.ts
 
 # Native

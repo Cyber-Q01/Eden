@@ -1,5 +1,8 @@
 import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
+import { decode } from 'base64-arraybuffer';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -19,19 +22,25 @@ import ThemedTextInput from '../../components/ThemedTextInput';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
 import { useProfile } from '../../hooks/useProfile';
+import { supabase } from '../../lib/supabase';
 import { sanitizeDigits, sanitizeName, validateAll, validateName, validatePhone } from '../../lib/validation';
+
+const PROFILE_PICTURES_BUCKET = 'profile-pictures';
+const PLACEHOLDER_AVATAR = 'https://i.pravatar.cc/200';
 
 const EditProfileScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
     const { profile, loading, updateProfile } = useProfile();
 
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [phone, setPhone] = useState('');
     const [gender, setGender] = useState('');
-    const [avatar, setAvatar] = useState('https://i.pravatar.cc/200');
+    const [avatar, setAvatar] = useState<string | null>(null); // local URI or remote URL
+    const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null); // final uploaded URL
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showGenderModal, setShowGenderModal] = useState(false);
 
@@ -42,6 +51,12 @@ const EditProfileScreen = () => {
             setLastName(profile.last_name ?? '');
             setPhone(profile.phone ?? '');
             setGender(profile.gender ?? '');
+            // Pre-fill existing profile photo
+            const existingPhoto = profile.profile_photo ?? profile.user_biodata?.profile_photo;
+            if (existingPhoto) {
+                setAvatar(existingPhoto);
+                setUploadedPhotoUrl(existingPhoto);
+            }
         }
     }, [profile]);
 
@@ -52,8 +67,55 @@ const EditProfileScreen = () => {
             aspect: [1, 1],
             quality: 0.8,
         });
+
         if (!result.canceled) {
-            setAvatar(result.assets[0].uri);
+            const localUri = result.assets[0].uri;
+            setAvatar(localUri); // Show preview immediately
+
+            // Upload to Supabase Storage
+            setUploadingPhoto(true);
+            try {
+                // Compress image first
+                const manipulated = await ImageManipulator.manipulateAsync(
+                    localUri,
+                    [{ resize: { width: 400 } }],
+                    { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+                );
+
+                const base64 = await FileSystem.readAsStringAsync(manipulated.uri, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+
+                const arrayBuffer = decode(base64);
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('Not authenticated');
+
+                const fileName = `${user.id}-${Date.now()}.jpg`;
+
+                const { data, error: uploadError } = await supabase.storage
+                    .from(PROFILE_PICTURES_BUCKET)
+                    .upload(fileName, arrayBuffer, {
+                        contentType: 'image/jpeg',
+                        upsert: true, // upsert so re-uploading works
+                    });
+
+                if (uploadError) throw uploadError;
+
+                const { data: publicUrlData } = supabase.storage
+                    .from(PROFILE_PICTURES_BUCKET)
+                    .getPublicUrl(data.path);
+
+                setUploadedPhotoUrl(publicUrlData.publicUrl);
+                showSuccess('Photo uploaded ✓');
+            } catch (e: any) {
+                console.error('[EditProfile] Photo upload error:', e);
+                showError({ type: 'unknown', title: 'Upload Failed', message: e.message ?? 'Failed to upload photo' });
+                // Reset preview back to previous
+                const existingPhoto = profile?.profile_photo ?? profile?.user_biodata?.profile_photo ?? null;
+                setAvatar(existingPhoto);
+            } finally {
+                setUploadingPhoto(false);
+            }
         }
     };
 
@@ -74,6 +136,8 @@ const EditProfileScreen = () => {
             last_name: sanitizeName(lastName),
             phone: sanitizeDigits(phone),
             gender,
+            // Only include profile_photo if we have an uploaded URL
+            ...(uploadedPhotoUrl ? { profile_photo: uploadedPhotoUrl } : {}),
         });
         setSaving(false);
         if (!error) {
@@ -81,8 +145,10 @@ const EditProfileScreen = () => {
         }
     };
 
+    const displayAvatar = avatar ?? PLACEHOLDER_AVATAR;
+
     return (
-        <ScreenWrapper>
+        <ScreenWrapper withScrollView={true} >
             <View style={[styles.header, { backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
                 <BackButton />
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
@@ -94,11 +160,19 @@ const EditProfileScreen = () => {
                 {/* Avatar Section */}
                 <View style={styles.avatarContainer}>
                     <View style={styles.avatarWrapper}>
-                        <Image source={{ uri: avatar }} style={styles.avatar} />
-                        <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
-                            <Ionicons name="camera" size={20} color="#FFF" />
+                        <Image source={{ uri: displayAvatar }} style={styles.avatar} />
+                        {uploadingPhoto && (
+                            <View style={styles.uploadOverlay}>
+                                <ActivityIndicator size="small" color="#FFF" />
+                            </View>
+                        )}
+                        <TouchableOpacity style={styles.cameraButton} onPress={pickImage} disabled={uploadingPhoto}>
+                            <Ionicons name={uploadingPhoto ? 'cloud-upload-outline' : 'camera'} size={20} color="#FFF" />
                         </TouchableOpacity>
                     </View>
+                    <Text style={[styles.photoHint, { color: colors.textSecondary }]}>
+                        Tap the camera icon to change your photo
+                    </Text>
                 </View>
 
                 {/* Form Fields */}
@@ -144,7 +218,11 @@ const EditProfileScreen = () => {
                     </View>
                 )}
 
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
+                <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving || uploadingPhoto ? 0.7 : 1 }]}
+                    onPress={handleSave}
+                    disabled={saving || uploadingPhoto}
+                >
                     {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
                 </TouchableOpacity>
 
@@ -191,15 +269,10 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 20,
         paddingVertical: 15,
-        backgroundColor: '#fff',
-    },
-    backButton: {
-        padding: 5,
     },
     headerTitle: {
         fontSize: 18,
         fontWeight: '600',
-        color: '#333',
     },
     scrollContent: {
         paddingHorizontal: 20,
@@ -208,6 +281,7 @@ const styles = StyleSheet.create({
     avatarContainer: {
         alignItems: 'center',
         marginVertical: 30,
+        gap: 8,
     },
     avatarWrapper: {
         position: 'relative',
@@ -218,18 +292,30 @@ const styles = StyleSheet.create({
         borderRadius: 60,
         backgroundColor: '#E0E0E0',
     },
+    uploadOverlay: {
+        position: 'absolute',
+        inset: 0,
+        borderRadius: 60,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     cameraButton: {
         position: 'absolute',
-        bottom: 0,
-        right: 0,
-        backgroundColor: '#FFF',
+        bottom: 2,
+        right: 2,
+        backgroundColor: '#407BFF',
         padding: 8,
         borderRadius: 20,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.2,
         shadowRadius: 4,
         elevation: 3,
+    },
+    photoHint: {
+        fontSize: 12,
+        textAlign: 'center',
     },
     form: {
         gap: 20,
@@ -240,42 +326,22 @@ const styles = StyleSheet.create({
     },
     label: {
         fontSize: 14,
-        color: '#888',
         marginLeft: 4,
-    },
-    input: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        fontSize: 16,
-        color: '#333',
     },
     selectButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: '#FFFFFF',
         borderWidth: 1,
-        borderColor: '#E0E0E0',
         borderRadius: 12,
         paddingHorizontal: 16,
         paddingVertical: 14,
     },
     selectText: {
         fontSize: 16,
-        color: '#333',
-    },
-    placeholderText: {
-        color: '#999',
     },
     saveButton: {
-        backgroundColor: '#407BFF',
-        borderRadius: 12, // Match input border radius for consistency, but design shows rounded heavily.
-        // Design looks like a pill button.
-        // borderRadius: 30,
+        borderRadius: 12,
         paddingVertical: 16,
         alignItems: 'center',
         marginTop: 10,
@@ -285,7 +351,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
     },
-    // Modal Styles
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -294,7 +359,6 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: '80%',
-        backgroundColor: '#FFF',
         borderRadius: 20,
         padding: 20,
         shadowColor: '#000',
@@ -308,7 +372,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginBottom: 20,
         textAlign: 'center',
-        color: '#333',
     },
     modalOption: {
         flexDirection: 'row',
@@ -316,16 +379,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 15,
         borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
     },
     modalOptionText: {
         fontSize: 16,
-        color: '#333',
     },
     selectedOptionText: {
-        color: '#407BFF',
         fontWeight: '500',
-    }
+    },
 });
 
 export default EditProfileScreen;

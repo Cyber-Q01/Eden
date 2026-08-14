@@ -31,10 +31,12 @@ async function createNotification(
             })
 
         if (error) {
-            console.error('[Notification Error]:', JSON.stringify(error))
+            console.error(`[Notification Error for ${userId}]:`, JSON.stringify(error))
+        } else {
+            console.log(`[Notification Success]: ${type} for user ${userId}`);
         }
     } catch (err) {
-        console.error('[Notification Exception]:', err)
+        console.error(`[Notification Exception for ${userId}]:`, err)
     }
 }
 
@@ -333,6 +335,7 @@ serve(async (req) => {
 
             // ── Validate required fields ──────────────────────────────────────────
             if (!property_id || !move_in_date || !message) {
+                console.log('[POST Validation]: Missing fields');
                 return new Response(
                     JSON.stringify({
                         error: 'Missing required fields',
@@ -342,27 +345,69 @@ serve(async (req) => {
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
                 )
             }
+            console.log('[POST Validation]: Required fields present');
 
             // ── Validate message length ───────────────────────────────────────────
             const trimmedMessage = message.trim()
-            if (trimmedMessage.length < 10) {
-                return new Response(
-                    JSON.stringify({ error: 'Message must be at least 10 characters long' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-                )
+            let isStructured = false;
+            let coverLetter = trimmedMessage;
+            try {
+                if (trimmedMessage.startsWith('{')) {
+                    const parsed = JSON.parse(trimmedMessage);
+                    if (parsed && parsed.__eden_v === 1) {
+                        isStructured = true;
+                        coverLetter = (parsed.cover_letter || '').trim();
+                    }
+                }
+            } catch (e) {
+                console.log('[POST Validation]: Failed to parse message as JSON, treating as plain text');
             }
 
-            if (trimmedMessage.length > 1000) {
-                return new Response(
-                    JSON.stringify({ error: 'Message must not exceed 1000 characters' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-                )
+            console.log('[POST Validation]: Message trimmed, length =', trimmedMessage.length, 'isStructured =', isStructured, 'coverLetter length =', coverLetter.length);
+
+            if (isStructured) {
+                if (coverLetter.length < 10) {
+                    return new Response(
+                        JSON.stringify({ error: 'Message must be at least 10 characters long' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                    )
+                }
+                if (coverLetter.length > 3000) {
+                    return new Response(
+                        JSON.stringify({ error: 'Message must not exceed 3000 characters' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                    )
+                }
+                if (trimmedMessage.length > 50000) {
+                    return new Response(
+                        JSON.stringify({ error: 'Total application data size is too large' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                    )
+                }
+            } else {
+                if (trimmedMessage.length < 10) {
+                    console.log('[POST Validation]: Message too short');
+                    return new Response(
+                        JSON.stringify({ error: 'Message must be at least 10 characters long' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                    )
+                }
+
+                if (trimmedMessage.length > 3000) {
+                    console.log('[POST Validation]: Message too long');
+                    return new Response(
+                        JSON.stringify({ error: 'Message must not exceed 3000 characters' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                    )
+                }
             }
+            console.log('[POST Validation]: Message length OK');
 
             // ── Validate move-in date ─────────────────────────────────────────────
             const moveInDate = new Date(move_in_date)
             const today = new Date()
             today.setHours(0, 0, 0, 0)
+            console.log('[POST Validation]: Date objects created');
 
             if (isNaN(moveInDate.getTime())) {
                 return new Response(
@@ -386,9 +431,10 @@ serve(async (req) => {
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
                 )
             }
+            console.log('[POST Validation]: Dates OK');
 
             // ✅ 1. Fetch user info (only what exists in users table)
-            console.log('[POST]: fetching user info =', user.id)
+            console.log('[POST]: fetching user info for ID =', user.id)
 
             const { data: userData, error: userError } = await supabase
                 .from('users')
@@ -396,13 +442,14 @@ serve(async (req) => {
                 .eq('id', user.id)
                 .single()
 
-            if (userError) {
+            if (userError || !userData) {
                 console.error('[User Fetch Error]:', JSON.stringify(userError))
                 return new Response(
-                    JSON.stringify({ error: 'Failed to fetch user data', details: userError.message }),
+                    JSON.stringify({ error: `User not found in database: ${userError?.message || 'No record'}` }),
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
                 )
             }
+            console.log('[POST]: user info fetched for', userData.email);
 
             // ✅ MEMBERSHIP CHECK SKIPPED FOR NOW
 
@@ -415,20 +462,14 @@ serve(async (req) => {
                 .eq('id', property_id)
                 .single()
 
-            if (propertyError) {
+            if (propertyError || !property) {
                 console.error('[Property Fetch Error]:', JSON.stringify(propertyError))
                 return new Response(
-                    JSON.stringify({ error: 'Property not found', details: propertyError.message }),
+                    JSON.stringify({ error: `Property not found or error: ${propertyError?.message || 'No record'}` }),
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
                 )
             }
-
-            if (!property) {
-                return new Response(
-                    JSON.stringify({ error: 'Property not found' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
-                )
-            }
+            console.log('[POST]: property fetched =', property.title);
 
             // ── Guard: cannot apply to own property ───────────────────────────────
             if (property.landlord_id === user.id) {
@@ -450,34 +491,73 @@ serve(async (req) => {
             }
 
             // ✅ 3. Fetch landlord details (only what exists in users table)
-            const { data: landlordData } = await supabase
+            const { data: landlordData, error: landlordError } = await supabase
                 .from('users')
                 .select('id, first_name, last_name, email')
                 .eq('id', property.landlord_id)
                 .single()
 
+            if (landlordError) {
+                console.warn('[Landlord Fetch Warning]:', JSON.stringify(landlordError));
+            }
+            console.log('[POST]: landlord info fetched status =', !!landlordData);
+
             // ── 4. Check for duplicate application ───────────────────────────────
             console.log('[POST]: checking for existing application')
 
-            const { data: existingApplication } = await supabase
+            const { data: existingApplication, error: existingError } = await supabase
                 .from('property_applications')
                 .select('id, status')
                 .eq('property_id', property_id)
                 .eq('renter_id', user.id)
                 .maybeSingle()
 
+            if (existingError) {
+                console.error('[Duplicate Check Error]:', JSON.stringify(existingError));
+                return new Response(
+                    JSON.stringify({ 
+                        error: 'Failed to check for existing applications',
+                        details: existingError.message,
+                        code: existingError.code
+                    }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                )
+            }
+            console.log('[POST]: existing application check result =', !!existingApplication);
+
             if (existingApplication) {
+                console.log('[POST]: application already exists, status =', existingApplication.status);
                 if (existingApplication.status === 'pending') {
                     return new Response(
-                        JSON.stringify({ error: 'You already have a pending application for this property' }),
+                        JSON.stringify({ 
+                            error: 'You already have a pending application for this property',
+                            status: 'pending',
+                            application_id: existingApplication.id
+                        }),
                         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
                     )
                 }
                 if (existingApplication.status === 'accepted') {
                     return new Response(
-                        JSON.stringify({ error: 'You already have an accepted application for this property' }),
+                        JSON.stringify({ 
+                            error: 'You already have an accepted application for this property',
+                            status: 'accepted',
+                            application_id: existingApplication.id
+                        }),
                         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
                     )
+                }
+                
+                // If status is 'declined', we allow them to re-apply by deleting the old one
+                console.log('[POST]: deleting previous declined application to allow re-apply');
+                const { error: deleteError } = await supabase
+                    .from('property_applications')
+                    .delete()
+                    .eq('id', existingApplication.id);
+                
+                if (deleteError) {
+                    console.error('[Delete Old Application Error]:', JSON.stringify(deleteError));
+                    // Proceed anyway, the insert might handle it or fail gracefully
                 }
             }
 
@@ -527,7 +607,7 @@ serve(async (req) => {
 
                 return new Response(
                     JSON.stringify({
-                        error: applicationError.message,
+                        error: `Application Save Error: ${applicationError.message}`,
                         code: applicationError.code,
                         details: applicationError.details,
                     }),
@@ -536,45 +616,38 @@ serve(async (req) => {
             }
 
             console.log('[POST]: application created =', application.id)
-
-            // ✅ 6. Notify landlord
             const tenantName = `${userData.first_name} ${userData.last_name}`
 
+            // ✅ 6. Notify landlord
+            console.log('[POST]: Creating notification for landlord =', property.landlord_id);
             await createNotification(
                 supabase,
                 property.landlord_id,
                 'new_application',
                 '🏠 New Rental Application',
-                `${tenantName} has applied to rent "${property.title}". Move-in date: ${new Date(move_in_date).toLocaleDateString('en-NG')}.`,
+                `${tenantName} has applied to rent "${property.title}".`,
                 {
                     application_id: application.id,
                     property_id: property.id,
                     renter_id: user.id,
                     renter_name: tenantName,
-                    renter_email: userData.email,
-                    property_title: property.title,
-                    move_in_date,
-                },
-                `/dashboard/applications/${application.id}`
+                    screen: 'LandlordApplications'
+                }
             )
 
             // ── 7. Notify tenant ──────────────────────────────────────────────────
+            console.log('[POST]: Creating notification for tenant =', user.id);
             await createNotification(
                 supabase,
                 user.id,
                 'new_application',
                 '✅ Application Submitted',
-                `Your application for "${property.title}" has been submitted. The landlord will review it shortly.`,
+                `Your application for "${property.title}" has been submitted.`,
                 {
                     application_id: application.id,
                     property_id: property.id,
-                    property_title: property.title,
-                    landlord_name: landlordData
-                        ? `${landlordData.first_name} ${landlordData.last_name}`
-                        : 'Property Landlord',
-                    move_in_date,
-                },
-                `/dashboard/my-applications/${application.id}`
+                    screen: 'MyApplications'
+                }
             )
 
             return new Response(JSON.stringify(application), {

@@ -1,13 +1,17 @@
+import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Animated,
     Dimensions,
+    Modal,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
 } from 'react-native';
 import WebView from 'react-native-webview';
@@ -30,7 +34,7 @@ const BUNDLES = UNLOCK_OPTIONS.map((unlocks) => {
 
 const TopUpCreditsScreen = () => {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { credits, loading, fetchCredits, initializeTopUp, verifyTopUp } = useCredits();
 
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -38,6 +42,51 @@ const TopUpCreditsScreen = () => {
     const [currentReference, setCurrentReference] = useState<string | null>(null);
     const [verifying, setVerifying] = useState(false);
     const [processing, setProcessing] = useState(false);
+    const [isModalVisible, setIsModalVisible] = useState(false);
+
+    const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+    const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (isModalVisible) {
+            Animated.parallel([
+                Animated.spring(translateY, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    tension: 65,
+                    friction: 11,
+                }),
+                Animated.timing(backdropOpacity, {
+                    toValue: 1,
+                    duration: 250,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+        }
+    }, [isModalVisible]);
+
+    const openModal = () => {
+        setIsModalVisible(true);
+    };
+
+    const closeModal = (callback?: () => void) => {
+        Animated.parallel([
+            Animated.timing(translateY, {
+                toValue: SCREEN_HEIGHT,
+                duration: 280,
+                useNativeDriver: true,
+            }),
+            Animated.timing(backdropOpacity, {
+                toValue: 0,
+                duration: 250,
+                useNativeDriver: true,
+            }),
+        ]).start(() => {
+            setIsModalVisible(false);
+            if (callback) callback();
+        });
+    };
 
     const selected = BUNDLES[selectedIndex];
     const currentBalanceNaira = credits * CREDIT_PRICE;
@@ -51,10 +100,27 @@ const TopUpCreditsScreen = () => {
             const data = await initializeTopUp(selected.amount, selected.unlocks);
             if (data) {
                 setCurrentReference(data.reference);
-                setPaystackUrl(data.authorization_url);
+                closeModal(() => {
+                    setPaystackUrl(data.authorization_url);
+                });
             }
         } finally {
             setProcessing(false);
+        }
+    };
+
+    const handleWebviewBack = async () => {
+        if (currentReference) {
+            setPaystackUrl(null);
+            setVerifying(true);
+            const success = await verifyTopUp(currentReference);
+            setVerifying(false);
+            if (success) {
+                setCurrentReference(null);
+                await fetchCredits();
+            }
+        } else {
+            setPaystackUrl(null);
         }
     };
 
@@ -62,7 +128,7 @@ const TopUpCreditsScreen = () => {
         const url: string = navState.url ?? '';
 
         if (
-            (url.includes('edenhome://credits/verify') ||
+            (url.includes('Eden://credits/verify') ||
                 url.includes('paystack-callback') ||
                 url.includes('paystack.co/close') ||
                 url.includes('standard.paystack.co/close')) &&
@@ -78,7 +144,7 @@ const TopUpCreditsScreen = () => {
             }
         }
 
-        if (url.includes('edenhome://credits/cancelled')) {
+        if (url.includes('Eden://credits/cancelled')) {
             setPaystackUrl(null);
             setCurrentReference(null);
         }
@@ -87,16 +153,23 @@ const TopUpCreditsScreen = () => {
     // ── Paystack WebView ──────────────────────────────────────────────────────
     if (paystackUrl) {
         return (
-            <ScreenWrapper>
+            <ScreenWrapper disableKeyboardAvoidingView>
                 <View style={styles.webviewContainer}>
                     <View style={[styles.webviewHeader, { borderBottomColor: colors.border }]}>
-                        <BackButton />
+                        <TouchableOpacity onPress={handleWebviewBack} style={styles.backButton}>
+                            <Ionicons name="arrow-back" size={24} color={colors.text} />
+                        </TouchableOpacity>
                         <Text style={[styles.webviewTitle, { color: colors.text }]}>Secure Payment</Text>
                         <View style={{ width: 22 }} />
                     </View>
                     <WebView
                         source={{ uri: paystackUrl }}
                         onNavigationStateChange={handleWebViewNav}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        setSupportMultipleWindows={false}
+                        javaScriptCanOpenWindowsAutomatically={true}
+                        mixedContentMode="compatibility"
                         startInLoadingState
                         renderLoading={() => (
                             <View style={styles.webviewLoading}>
@@ -132,19 +205,19 @@ const TopUpCreditsScreen = () => {
                 {/* Header */}
                 <View style={styles.header}>
                     <BackButton />
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Top Up Credits</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Fund Wallet</Text>
                     <View style={{ width: 24 }} />
                 </View>
 
                 {/* Balance Card */}
                 <View style={styles.balanceCard}>
                     <View style={styles.balanceCardInner}>
-                        <Text style={styles.balanceLabel}>Current Balance</Text>
+                        <Text style={styles.balanceLabel}>Wallet Balance</Text>
                         <Text style={styles.balanceAmount}>
                             N{(credits * CREDIT_PRICE).toLocaleString()}.00
                         </Text>
                         <Text style={styles.balanceUnlocks}>
-                            {credits} unlock{credits !== 1 ? 's' : ''} remaining
+                            {credits} service unit{credits !== 1 ? 's' : ''} available
                         </Text>
                     </View>
                     <View style={styles.balanceIconWrap}>
@@ -154,7 +227,7 @@ const TopUpCreditsScreen = () => {
 
                 {/* Select Recharge */}
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Select Recharge Amount
+                    Select Deposit Amount
                 </Text>
 
                 <View style={styles.bundleGrid}>
@@ -192,7 +265,7 @@ const TopUpCreditsScreen = () => {
                                         { color: isSelected ? 'rgba(255,255,255,0.8)' : colors.textSecondary },
                                     ]}
                                 >
-                                    {bundle.unlocks} unlocks
+                                    {bundle.unlocks} units
                                 </Text>
                             </TouchableOpacity>
                         );
@@ -203,7 +276,7 @@ const TopUpCreditsScreen = () => {
                 <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.summaryRow}>
                         <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-                            Subtotal ({selected.unlocks} unlocks)
+                            Subtotal ({selected.unlocks} units)
                         </Text>
                         <Text style={[styles.summaryValue, { color: colors.text }]}>
                             N{selected.subtotal.toLocaleString()}
@@ -233,7 +306,7 @@ const TopUpCreditsScreen = () => {
                 <View style={styles.infoRow}>
                     <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
                     <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                        Each unlock costs N{CREDIT_PRICE}
+                        Each unit costs N{CREDIT_PRICE}
                     </Text>
                 </View>
             </ScrollView>
@@ -242,19 +315,124 @@ const TopUpCreditsScreen = () => {
             <View style={[styles.ctaContainer, { backgroundColor: colors.background }]}>
                 <TouchableOpacity
                     style={[styles.ctaButton, { backgroundColor: colors.primary }]}
-                    onPress={handlePay}
-                    disabled={processing}
+                    onPress={openModal}
                     activeOpacity={0.85}
                 >
-                    {processing ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.ctaText}>
-                            Proceed to pay N{selected.amount.toLocaleString()}
-                        </Text>
-                    )}
+                    <Text style={styles.ctaText}>
+                        Proceed to pay N{selected.amount.toLocaleString()}
+                    </Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Payment Method Bottom Sheet Modal */}
+            <Modal
+                transparent
+                visible={isModalVisible}
+                animationType="none"
+                onRequestClose={() => closeModal()}
+            >
+                <TouchableWithoutFeedback onPress={() => closeModal()}>
+                    <Animated.View
+                        style={[
+                            styles.modalBackdrop,
+                            {
+                                opacity: backdropOpacity,
+                                backgroundColor: isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.55)',
+                            },
+                        ]}
+                    />
+                </TouchableWithoutFeedback>
+
+                <Animated.View
+                    style={[
+                        styles.modalSheet,
+                        {
+                            backgroundColor: colors.background,
+                            transform: [{ translateY }],
+                        },
+                    ]}
+                >
+                    {/* Drag indicator handle */}
+                    <View style={styles.modalDragArea}>
+                        <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+                    </View>
+
+                    <View style={styles.modalContent}>
+                        {/* Title Row */}
+                        <View style={styles.modalHeaderRow}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Payment Method</Text>
+                            <View style={[styles.amountPillBadge, { backgroundColor: colors.primary + '10' }]}>
+                                <Text style={[styles.amountPillText, { color: colors.primary }]}>
+                                    N{selected.amount.toLocaleString()}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                        {/* Paystack Option Card */}
+                        <TouchableOpacity
+                            style={[
+                                styles.paymentOptionCard,
+                                {
+                                    borderColor: colors.primary,
+                                    backgroundColor: isDark ? 'rgba(37, 99, 235, 0.08)' : '#EFF6FF'
+                                }
+                            ]}
+                            activeOpacity={0.8}
+                        >
+                            <View style={[styles.paystackIconWrap, { backgroundColor: '#00C3F7' }]}>
+                                <Text style={styles.paystackIconText}>P</Text>
+                            </View>
+                            <View style={styles.paymentOptionDetails}>
+                                <Text style={[styles.paymentOptionTitle, { color: colors.text }]}>Paystack</Text>
+                                <Text style={[styles.paymentOptionSubtitle, { color: colors.textSecondary }]}>
+                                    Pay with card, bank transfer or USSD
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* Security Banner */}
+                        <View
+                            style={[
+                                styles.securityBanner,
+                                {
+                                    borderColor: isDark ? '#064E3B' : '#A7F3D0',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5'
+                                }
+                            ]}
+                        >
+                            <View style={styles.securityIconWrap}>
+                                <Ionicons name="lock-closed-outline" size={18} color={isDark ? '#34D399' : '#10B981'} />
+                            </View>
+                            <View style={styles.securityDetails}>
+                                <Text style={[styles.securityTitle, { color: isDark ? '#34D399' : '#065F46' }]}>
+                                    All transactions are 256-bit encrypted
+                                </Text>
+                                <Text style={[styles.securitySubtitle, { color: isDark ? '#059669' : '#059669' }]}>
+                                    Your payment is 100% secure
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* CTA Pay Button */}
+                        <TouchableOpacity
+                            style={[styles.modalPayButton, { backgroundColor: colors.primary }]}
+                            onPress={handlePay}
+                            disabled={processing}
+                            activeOpacity={0.85}
+                        >
+                            {processing ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.modalPayButtonText}>
+                                    Pay N{selected.amount.toLocaleString()} with Paystack
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </Animated.View>
+            </Modal>
         </ScreenWrapper>
     );
 };
@@ -445,6 +623,132 @@ const styles = StyleSheet.create({
     verifyingText: {
         fontSize: 16,
         fontWeight: '500',
+    },
+
+    // Modal Styles
+    modalBackdrop: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    modalSheet: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        paddingBottom: 40,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 24,
+    },
+    modalDragArea: {
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    modalHandle: {
+        width: 38,
+        height: 4,
+        borderRadius: 2,
+    },
+    modalContent: {
+        paddingHorizontal: 24,
+    },
+    modalHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 4,
+        marginBottom: 12,
+    },
+    modalTitle: {
+        fontSize: 22,
+        fontWeight: '800',
+    },
+    amountPillBadge: {
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    amountPillText: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    divider: {
+        height: 1,
+        width: '100%',
+        marginBottom: 20,
+    },
+    paymentOptionCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+    },
+    paystackIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16,
+    },
+    paystackIconText: {
+        color: '#fff',
+        fontSize: 22,
+        fontWeight: '900',
+    },
+    paymentOptionDetails: {
+        flex: 1,
+    },
+    paymentOptionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    paymentOptionSubtitle: {
+        fontSize: 13,
+    },
+    securityBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 36,
+    },
+    securityIconWrap: {
+        marginRight: 12,
+    },
+    securityDetails: {
+        flex: 1,
+    },
+    securityTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    securitySubtitle: {
+        fontSize: 11,
+        marginTop: 1,
+    },
+    modalPayButton: {
+        height: 56,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    modalPayButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700',
     },
 });
 

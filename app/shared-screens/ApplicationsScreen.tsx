@@ -81,7 +81,11 @@ const ApplicationsScreen = () => {
         activeOpacity={0.7}
         onPress={() => router.push({
           pathname: '/shared-screens/ApplicationDetailsScreen',
-          params: { application_id: item.id }
+          params: {
+            application_id: item.id,
+            id: item.id,
+            applicationData: JSON.stringify(item),
+          }
         })}
         style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
@@ -187,7 +191,7 @@ const ApplicationsScreen = () => {
   };
 
   return (
-    <ScreenWrapper withScrollView={false} style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenWrapper withScrollView={true} style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <BackButton />

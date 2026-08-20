@@ -78,7 +78,7 @@ const LeasesScreen = () => {
     };
 
     return (
-        <ScreenWrapper withScrollView={false} style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <View style={styles.header}>
                 <BackButton />
                 <Text style={[styles.headerTitle, { color: colors.text }]}>My Leases</Text>

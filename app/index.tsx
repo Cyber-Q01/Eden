@@ -9,7 +9,7 @@ const { width } = Dimensions.get('window');
 
 export default function Index() {
   const router = useRouter();
-  const { session, loading, role } = useAuth();
+  const { session, loading, role, completedBiodata } = useAuth();
   const progress = useRef(new Animated.Value(0)).current;
   const animationStarted = useRef(false);
   const [showProgressBar, setShowProgressBar] = useState(false);
@@ -44,7 +44,7 @@ export default function Index() {
         }
       }
     });
-  }, [loading, session, role]);
+  }, [loading, session, role, completedBiodata]);
 
   const progressWidth = progress.interpolate({
     inputRange: [0, 1],
@@ -52,8 +52,10 @@ export default function Index() {
   });
 
   // If there is an active session, redirect immediately using the declarative Redirect component.
-  // This avoids the useRootNavigationState hook which is prone to deadlocks in child screens.
   if (!loading && session) {
+    if (!completedBiodata) {
+      return <Redirect href="/profilesetup/biodata" />;
+    }
     if (role === 'LANDLORD' || role === 'AGENT') {
       return <Redirect href="/landlord" />;
     } else {

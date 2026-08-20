@@ -10,6 +10,8 @@ const TOAST_CONFIG: Record<AppErrorType | 'success', { icon: string; bg: string;
     network:     { icon: 'wifi-outline',          bg: '#F5F5F5', accent: '#555555' },
     server:      { icon: 'alert-circle-outline',  bg: '#FFF8F0', accent: '#B85C00' },
     auth:        { icon: 'lock-closed-outline',   bg: '#F0F4FF', accent: '#0047AB' },
+    error:       { icon: 'alert-circle-outline',  bg: '#FEE2E2', accent: '#DC2626' },
+    validation:  { icon: 'warning-outline',       bg: '#FEF3C7', accent: '#D97706' },
     unknown:     { icon: 'warning-outline',       bg: '#FFF8F0', accent: '#B85C00' },
     success:     { icon: 'checkmark-circle-outline', bg: '#F0FAF0', accent: '#1B7A1B' },
 };
@@ -17,7 +19,7 @@ const TOAST_CONFIG: Record<AppErrorType | 'success', { icon: string; bg: string;
 // ─── Context ──────────────────────────────────────────────────────────────────
 interface ToastContextType {
     showToast: (title: string, message: string, type?: AppErrorType | 'success') => void;
-    showError: (error: { type: AppErrorType; title: string; message: string }) => void;
+    showError: (error: { type?: AppErrorType; title: string; message: string }) => void;
     showSuccess: (message: string) => void;
 }
 
@@ -86,8 +88,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ]).start(() => setVisible(false));
     }, [translateY, opacity]);
 
-    const showError = useCallback((error: { type: AppErrorType; title: string; message: string }) => {
-        showToast(error.title, error.message, error.type);
+    const showError = useCallback((error: { type?: AppErrorType; title: string; message: string }) => {
+        showToast(error.title, error.message, error.type || 'error');
     }, [showToast]);
 
     const showSuccess = useCallback((message: string) => {

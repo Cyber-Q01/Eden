@@ -1,7 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+    KeyboardAvoidingView,
+    Linking,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
@@ -10,7 +19,10 @@ import { useTheme } from '../../context/ThemeContext';
 import { handleError } from '../../lib/errorHandler';
 import { supabase } from '../../lib/supabase';
 import { withTimeout } from '../../lib/timeout';
-import { sanitizeEmail, sanitizeName, validateAll, validateEmail, validateName, validatePassword } from '../../lib/validation';
+import { sanitizeEmail, validateAll, validateEmail, validatePassword } from '../../lib/validation';
+
+const PRIVACY_URL = 'https://web-portal-eta-smoky.vercel.app/privacy';
+const TERMS_URL = 'https://web-portal-eta-smoky.vercel.app/terms';
 
 const SignupScreen = () => {
     const router = useRouter();
@@ -19,12 +31,12 @@ const SignupScreen = () => {
 
     const { inviteCode } = useLocalSearchParams<{ inviteCode?: string }>();
     const [email, setEmail] = useState('');
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [selectedType, setSelectedType] = useState<'tenant' | 'landlord' | 'agent'>(inviteCode ? 'agent' : 'tenant');
     const [agreed, setAgreed] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -33,15 +45,31 @@ const SignupScreen = () => {
         }
     }, [inviteCode]);
 
+    const openLegalLink = async (url: string) => {
+        try {
+            const canOpen = await Linking.canOpenURL(url);
+            if (canOpen) {
+                await Linking.openURL(url);
+            } else {
+                showError({ type: 'unknown', title: 'Cannot Open Link', message: 'Please visit ' + url });
+            }
+        } catch {
+            await Linking.openURL(url);
+        }
+    };
+
     const handleSignup = async () => {
-        if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim()) {
-            showError({ type: 'unknown', title: 'Missing Fields', message: 'All fields are required to create an account.' });
+        if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+            showError({ type: 'unknown', title: 'Missing Fields', message: 'Please enter your email, password, and confirm password.' });
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            showError({ type: 'unknown', title: 'Password Mismatch', message: 'Your passwords do not match. Please re-enter.' });
             return;
         }
 
         const error = validateAll([
-            { check: () => validateName(firstName, 'First name') },
-            { check: () => validateName(lastName, 'Last name') },
             { check: () => validateEmail(email) },
             { check: () => validatePassword(password) },
         ]);
@@ -50,12 +78,10 @@ const SignupScreen = () => {
             return;
         }
         if (!agreed) {
-            showError({ type: 'unknown', title: 'Terms Required', message: 'Please agree to the Terms & conditions.' });
+            showError({ type: 'unknown', title: 'Agreement Required', message: 'Please agree to Eden’s Privacy Policy and Terms of Use to proceed.' });
             return;
         }
 
-        const cleanFirst = sanitizeName(firstName);
-        const cleanLast = sanitizeName(lastName);
         const cleanEmail = sanitizeEmail(email);
 
         setLoading(true);
@@ -65,11 +91,7 @@ const SignupScreen = () => {
                 password,
                 options: {
                     data: {
-                        firstName: cleanFirst,
-                        lastName: cleanLast,
-                        first_name: cleanFirst,
-                        last_name: cleanLast,
-                        role: selectedType.toUpperCase()
+                        role: selectedType.toUpperCase(),
                     }
                 }
             }));
@@ -96,125 +118,148 @@ const SignupScreen = () => {
     };
 
     return (
-        <ScreenWrapper>
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                style={{ backgroundColor: 'transparent' }}
+        <ScreenWrapper withScrollView={true}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
             >
-                <View style={styles.header}>
-                    <Text style={[styles.mainTitle, { color: colors.text }]}>Create Account</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Eden — no agents, no stress</Text>
-                </View>
-
-                <View style={styles.roleSelectionContainer}>
-                    <Text style={[styles.label, { color: colors.text }]}>I am a...</Text>
-                    <View style={styles.roleCardsRow}>
-                        <TouchableOpacity
-                            style={[
-                                styles.roleCard,
-                                { backgroundColor: colors.card, borderColor: colors.border },
-                                selectedType === 'tenant' && { backgroundColor: colors.primary, borderColor: colors.primary }
-                            ]}
-                            onPress={() => setSelectedType('tenant')}
-                        >
-                            <Ionicons
-                                name="person"
-                                size={20}
-                                color={selectedType === 'tenant' ? '#FFF' : colors.textSecondary}
-                            />
-                            <Text style={[styles.roleTitle, { color: colors.primary }, selectedType === 'tenant' && { color: '#FFF' }]}>Tenant</Text>
-                            <Text style={[styles.roleDesc, { color: colors.textSecondary }, selectedType === 'tenant' && { color: '#FFF' }]}>Looking for a home</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.roleCard,
-                                { backgroundColor: colors.card, borderColor: colors.border },
-                                selectedType === 'landlord' && { backgroundColor: colors.primary, borderColor: colors.primary }
-                            ]}
-                            onPress={() => setSelectedType('landlord')}
-                        >
-                            <Ionicons
-                                name="home"
-                                size={20}
-                                color={selectedType === 'landlord' ? '#FFF' : colors.textSecondary}
-                            />
-                            <Text style={[styles.roleTitle, { color: colors.primary }, selectedType === 'landlord' && { color: '#FFF' }]}>Landlord</Text>
-                            <Text style={[styles.roleDesc, { color: colors.textSecondary }, selectedType === 'landlord' && { color: '#FFF' }]}>I have a property</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <View style={styles.formContainer}>
-                    <View style={styles.nameRow}>
-                        <ThemedTextInput
-                            placeholder="First Name"
-                            value={firstName}
-                            onChangeText={setFirstName}
-                            containerStyle={styles.nameInput}
-                        />
-                        <ThemedTextInput
-                            placeholder="Last Name"
-                            value={lastName}
-                            onChangeText={setLastName}
-                            containerStyle={styles.nameInput}
-                        />
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    style={{ backgroundColor: 'transparent' }}
+                >
+                    <View style={styles.header}>
+                        <Text style={[styles.mainTitle, { color: colors.text }]}>Create Account</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Eden — safe real estate &amp; escrow protection</Text>
                     </View>
 
-                    <ThemedTextInput
-                        placeholder="Enter your email"
-                        value={email}
-                        onChangeText={setEmail}
-                        autoCapitalize={'none'}
-                        keyboardType="email-address"
-                    // containerStyle={[styles.input, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    />
-
-                    <ThemedTextInput
-                        placeholder="Create a password"
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry={!showPassword}
-                        // containerStyle={[styles.input, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        rightIcon={
-                            <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
-                                <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.textSecondary} />
+                    {/* Role Selection */}
+                    <View style={styles.roleSelectionContainer}>
+                        <Text style={[styles.label, { color: colors.text }]}>I am a...</Text>
+                        <View style={styles.roleCardsRow}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.roleCard,
+                                    { backgroundColor: colors.card, borderColor: colors.border },
+                                    selectedType === 'tenant' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                                ]}
+                                onPress={() => setSelectedType('tenant')}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons
+                                    name="person"
+                                    size={20}
+                                    color={selectedType === 'tenant' ? '#FFF' : colors.textSecondary}
+                                />
+                                <Text style={[styles.roleTitle, { color: colors.primary }, selectedType === 'tenant' && { color: '#FFF' }]}>Tenant</Text>
+                                <Text style={[styles.roleDesc, { color: colors.textSecondary }, selectedType === 'tenant' && { color: '#FFF' }]}>Looking for a home</Text>
                             </TouchableOpacity>
-                        }
-                    />
 
-                    <TouchableOpacity
-                        style={styles.termsContainer}
-                        onPress={() => setAgreed(!agreed)}
-                    >
-                        <View style={[
-                            styles.checkbox,
-                            { backgroundColor: colors.card, borderColor: colors.border },
-                            agreed && { backgroundColor: colors.primary, borderColor: colors.primary }
-                        ]}>
-                            {agreed && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                            <TouchableOpacity
+                                style={[
+                                    styles.roleCard,
+                                    { backgroundColor: colors.card, borderColor: colors.border },
+                                    selectedType === 'landlord' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                                ]}
+                                onPress={() => setSelectedType('landlord')}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons
+                                    name="home"
+                                    size={20}
+                                    color={selectedType === 'landlord' ? '#FFF' : colors.textSecondary}
+                                />
+                                <Text style={[styles.roleTitle, { color: colors.primary }, selectedType === 'landlord' && { color: '#FFF' }]}>Landlord</Text>
+                                <Text style={[styles.roleDesc, { color: colors.textSecondary }, selectedType === 'landlord' && { color: '#FFF' }]}>I have a property</Text>
+                            </TouchableOpacity>
                         </View>
-                        <Text style={[styles.termsText, { color: colors.textSecondary }]}>
-                            I agree to Eden's <Text style={[styles.termsLink, { color: colors.primary }]}>Terms & conditions</Text>
-                        </Text>
-                    </TouchableOpacity>
+                    </View>
 
-                    <CustomButton
-                        title={loading ? "Creating Account..." : "Sign Up"}
-                        onPress={handleSignup}
-                        style={[styles.signupButton]}
-                        disabled={loading}
-                    />
+                    {/* Form Fields */}
+                    <View style={styles.formContainer}>
+                        <ThemedTextInput
+                            placeholder="Enter your email"
+                            value={email}
+                            onChangeText={setEmail}
+                            autoCapitalize={'none'}
+                            keyboardType="email-address"
+                        />
 
-                    <TouchableOpacity onPress={() => router.push('/auth/login')}>
-                        <Text style={[styles.loginPrompt, { color: colors.textSecondary }]}>
-                            Already have an Account ? <Text style={[styles.loginLink, { color: colors.primary }]}>Log In</Text>
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
+                        <ThemedTextInput
+                            placeholder="Create a password (min. 6 characters)"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry={!showPassword}
+                            rightIcon={
+                                <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+                                    <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            }
+                        />
+
+                        <ThemedTextInput
+                            placeholder="Confirm your password"
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            secureTextEntry={!showConfirmPassword}
+                            rightIcon={
+                                <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                                    <Ionicons name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            }
+                        />
+
+                        {/* Interactive Privacy Policy & Terms of Service Checkbox */}
+                        <View style={styles.termsRow}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.checkbox,
+                                    { backgroundColor: colors.card, borderColor: colors.border },
+                                    agreed && { backgroundColor: colors.primary, borderColor: colors.primary }
+                                ]}
+                                onPress={() => setAgreed(!agreed)}
+                                activeOpacity={0.8}
+                            >
+                                {agreed && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                            </TouchableOpacity>
+
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.termsText, { color: colors.textSecondary }]}>
+                                    I agree to Eden&apos;s{' '}
+                                    <Text
+                                        style={[styles.termsLink, { color: colors.primary }]}
+                                        onPress={() => openLegalLink(TERMS_URL)}
+                                    >
+                                        Terms of Service
+                                    </Text>
+                                    {' '}and{' '}
+                                    <Text
+                                        style={[styles.termsLink, { color: colors.primary }]}
+                                        onPress={() => openLegalLink(PRIVACY_URL)}
+                                    >
+                                        Privacy Policy
+                                    </Text>
+                                </Text>
+                            </View>
+                        </View>
+
+                        <CustomButton
+                            title={loading ? "Creating Account..." : "Sign Up"}
+                            onPress={handleSignup}
+                            style={styles.signupButton}
+                            disabled={loading}
+                        />
+
+                        <TouchableOpacity onPress={() => router.push('/auth/login')}>
+                            <Text style={[styles.loginPrompt, { color: colors.textSecondary }]}>
+                                Already have an Account? <Text style={[styles.loginLink, { color: colors.primary }]}>Log In</Text>
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };
@@ -223,13 +268,13 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingHorizontal: 24,
         paddingBottom: 48,
-        paddingTop: 60,
+        paddingTop: 50,
         flexGrow: 1,
     },
     header: {
         alignItems: 'center',
-        marginBottom: 32,
-        gap: 8,
+        marginBottom: 28,
+        gap: 6,
     },
     mainTitle: {
         fontSize: 28,
@@ -237,12 +282,12 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     subtitle: {
-        fontSize: 15,
+        fontSize: 14,
         textAlign: 'center',
-        lineHeight: 22,
+        lineHeight: 20,
     },
     roleSelectionContainer: {
-        marginBottom: 32,
+        marginBottom: 26,
     },
     label: {
         fontSize: 14,
@@ -251,69 +296,61 @@ const styles = StyleSheet.create({
     },
     roleCardsRow: {
         flexDirection: 'row',
-        gap: 16,
+        gap: 14,
     },
     roleCard: {
         flex: 1,
-        borderRadius: 12,
+        borderRadius: 14,
         padding: 16,
         borderWidth: 1,
         alignItems: 'center',
     },
     roleTitle: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '700',
-        marginTop: 8,
+        marginTop: 6,
     },
     roleDesc: {
-        fontSize: 12,
+        fontSize: 11.5,
         textAlign: 'center',
-        marginTop: 4,
+        marginTop: 2,
     },
     formContainer: {
-        gap: 20,
-    },
-    nameRow: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    nameInput: {
-        flex: 1,
-    },
-    input: {
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 60,
+        gap: 16,
     },
     eyeIcon: {
         padding: 8,
     },
-    termsContainer: {
+    termsRow: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         gap: 10,
+        marginVertical: 4,
     },
     checkbox: {
-        width: 24,
-        height: 24,
+        width: 22,
+        height: 22,
         borderRadius: 6,
-        borderWidth: 1,
+        borderWidth: 1.5,
         justifyContent: 'center',
         alignItems: 'center',
+        marginTop: 2,
     },
     termsText: {
-        fontSize: 14,
+        fontSize: 13,
+        lineHeight: 18,
     },
     termsLink: {
-        fontWeight: '600',
+        fontWeight: '700',
+        textDecorationLine: 'underline',
     },
     signupButton: {
-
-        marginTop: 10,
+        marginTop: 8,
     },
     loginPrompt: {
         textAlign: 'center',
-        fontSize: 15,
+        fontSize: 14,
+        marginTop: 8,
     },
     loginLink: {
         fontWeight: '700',

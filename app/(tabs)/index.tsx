@@ -12,6 +12,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useProfile } from '../../hooks/useProfile';
 import { useFavorites, useProperties } from '../../hooks/useProperties';
+import { useAdvertisements, MobileAdvertisement } from '../../hooks/useAdvertisements';
 
 const { width } = Dimensions.get('window');
 
@@ -43,6 +44,8 @@ const HomeScreen = () => {
     const { favorites, addFavorite, removeFavorite } = useFavorites();
     const { profile, loading: profileLoading } = useProfile();
     const { unreadCount } = useNotifications();
+    const { banners, handleBannerPress } = useAdvertisements();
+
     // Quick filter categories mapping display labels to actual property type values
     const categories = [
         { label: 'All', values: [] as string[] },
@@ -80,17 +83,18 @@ const HomeScreen = () => {
     const scrollRef = useRef<ScrollView>(null);
 
     useEffect(() => {
+        if (banners.length <= 1) return;
         const timer = setInterval(() => {
-            const nextIndex = (activeBanner + 1) % HERO_BANNERS.length;
+            const nextIndex = (activeBanner + 1) % banners.length;
             setActiveBanner(nextIndex);
             scrollRef.current?.scrollTo({
                 x: nextIndex * (width - 40),
                 animated: true,
             });
-        }, 3000);
+        }, 4000);
 
         return () => clearInterval(timer);
-    }, [activeBanner]);
+    }, [activeBanner, banners.length]);
 
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
@@ -128,7 +132,7 @@ const HomeScreen = () => {
                     </TouchableOpacity>
                 </View>
 
-                {/* Hero Banner Carousel */}
+                {/* Hero Banner Carousel - Live Advertisements & Promos */}
                 <View style={styles.heroContainer}>
                     <ScrollView
                         ref={scrollRef}
@@ -141,33 +145,64 @@ const HomeScreen = () => {
                         }}
                         style={styles.carousel}
                     >
-                        {HERO_BANNERS.map((banner) => (
-                            <View
+                        {banners.map((banner) => (
+                            <TouchableOpacity
                                 key={banner.id}
-                                style={[styles.heroBanner, { backgroundColor: banner.color }]}
+                                activeOpacity={0.9}
+                                onPress={() => handleBannerPress(banner)}
+                                style={[styles.heroBanner, { backgroundColor: banner.color || '#1D4ED8' }]}
                             >
+                                {banner.mediaUrl && (
+                                    <Image
+                                        source={{ uri: banner.mediaUrl }}
+                                        style={StyleSheet.absoluteFillObject}
+                                        resizeMode="cover"
+                                    />
+                                )}
                                 <View style={styles.heroGradient}>
-                                    <Text style={styles.bannerTitle}>{banner.title}</Text>
+                                    <View style={styles.bannerTagRow}>
+                                        <View style={styles.bannerCategoryTag}>
+                                            <Ionicons
+                                                name={banner.targetType === 'mobile_app' ? 'phone-portrait' : 'globe-outline'}
+                                                size={11}
+                                                color="#FFF"
+                                            />
+                                            <Text style={styles.bannerCategoryTagText}>
+                                                {banner.targetType === 'mobile_app' ? 'Mobile App' : 'Special Offer'}
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    <Text style={styles.bannerTitle} numberOfLines={2}>{banner.title}</Text>
                                     {banner.subtitle && (
-                                        <Text style={styles.bannerSubtitle}>{banner.subtitle}</Text>
+                                        <Text style={styles.bannerSubtitle} numberOfLines={1}>{banner.subtitle}</Text>
                                     )}
+
+                                    <View style={styles.ctaButtonWrap}>
+                                        <View style={styles.ctaButton}>
+                                            <Text style={styles.ctaButtonText}>{banner.ctaText || 'Learn More'}</Text>
+                                            <Ionicons name="arrow-forward" size={12} color="#1D4ED8" />
+                                        </View>
+                                    </View>
                                 </View>
-                            </View>
+                            </TouchableOpacity>
                         ))}
                     </ScrollView>
 
                     {/* Pagination Dots */}
-                    <View style={styles.pagination}>
-                        {HERO_BANNERS.map((_, index) => (
-                            <View
-                                key={index}
-                                style={[
-                                    styles.dot,
-                                    activeBanner === index && styles.activeDot
-                                ]}
-                            />
-                        ))}
-                    </View>
+                    {banners.length > 1 && (
+                        <View style={styles.pagination}>
+                            {banners.map((_, index) => (
+                                <View
+                                    key={index}
+                                    style={[
+                                        styles.dot,
+                                        activeBanner === index && styles.activeDot
+                                    ]}
+                                />
+                            ))}
+                        </View>
+                    )}
                 </View>
 
                 {/* Search Section */}
@@ -401,22 +436,65 @@ const styles = StyleSheet.create({
     },
     heroGradient: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.1)',
+        backgroundColor: 'rgba(0,0,0,0.45)',
         justifyContent: 'center',
-        paddingLeft: 30,
+        paddingHorizontal: 24,
+    },
+    bannerTagRow: {
+        flexDirection: 'row',
+        marginBottom: 6,
+    },
+    bannerCategoryTag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 8,
+    },
+    bannerCategoryTagText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
     },
     bannerTitle: {
-        fontSize: 22,
+        fontSize: 19,
         fontWeight: '800',
         color: '#FFFFFF',
-        width: '70%',
+        width: '85%',
+        lineHeight: 24,
     },
     bannerSubtitle: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '500',
-        color: 'rgba(255, 255, 255, 0.9)',
-        marginTop: 6,
-        width: '80%',
+        color: 'rgba(255, 255, 255, 0.95)',
+        marginTop: 4,
+        width: '85%',
+    },
+    ctaButtonWrap: {
+        marginTop: 10,
+        flexDirection: 'row',
+    },
+    ctaButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 12,
+        paddingVertical: 5,
+        borderRadius: 14,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    ctaButtonText: {
+        color: '#1D4ED8',
+        fontSize: 11,
+        fontWeight: '700',
     },
     pagination: {
         flexDirection: 'row',

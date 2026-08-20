@@ -24,6 +24,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useProfile } from '../../hooks/useProfile';
 import { useLandlord } from '../../hooks/useLandlord';
+import { useSupportTickets } from '../../hooks/useSupportTickets';
 import { callEdgeFunction } from '../../lib/api';
 
 // ─── Small reusable pieces ────────────────────────────────────────────────────
@@ -107,6 +108,7 @@ const LandlordProfileScreen = () => {
     const [loadingPush, setLoadingPush] = useState(false);
     const { profile, loading, signOut } = useProfile();
     const { stats } = useLandlord();
+    const { tickets } = useSupportTickets();
     const { registerForPushNotificationsAsync } = useNotifications();
     const [pushEnabled, setPushEnabled] = useState(true);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
@@ -238,7 +240,9 @@ const LandlordProfileScreen = () => {
                             </View>
                             <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
                             <View style={styles.statItem}>
-                                <Text style={[styles.statValue, { color: colors.text }]}>4.8</Text>
+                                <Text style={[styles.statValue, { color: colors.text }]}>
+                                    {stats.rating ? Number(stats.rating).toFixed(1) : '5.0'}
+                                </Text>
                                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Avg Rating</Text>
                             </View>
                         </View>
@@ -275,8 +279,8 @@ const LandlordProfileScreen = () => {
                         />
                         <MenuRow
                             icon="analytics-outline"
-                            label="Analytics"
-                            onPress={() => Alert.alert('Coming Soon', 'Analytics dashboard is coming soon.')}
+                            label="Portfolio Analytics"
+                            onPress={() => router.push('/landlord-screens/analytics')}
                         />
                         {role === 'LANDLORD' && (
                             <MenuRow
@@ -327,7 +331,13 @@ const LandlordProfileScreen = () => {
                                 icon="shield-checkmark-outline"
                                 label="KYC Status"
                                 value={profile?.is_verified ? 'Verified' : 'Pending'}
-                                onPress={() => { }}
+                                onPress={() => {
+                                    if (profile?.is_verified) {
+                                        Alert.alert('KYC Verified ✓', 'Your landlord credentials and identity are verified on Eden.');
+                                    } else {
+                                        router.push('/profilesetup/id-verification');
+                                    }
+                                }}
                             />
                         )}
                         {role === 'AGENT' && (
@@ -335,8 +345,13 @@ const LandlordProfileScreen = () => {
                                 icon="link-outline"
                                 label="Linked Landlord"
                                 value={profile?.delegated_landlord_name || 'Assigned'}
-                                onPress={() => { }}
-                                showChevron={false}
+                                onPress={() => {
+                                    Alert.alert(
+                                        'Delegated Agent Access',
+                                        `You are operating as an assigned real estate agent for ${profile?.delegated_landlord_name || 'your partner landlord'}. You have authorization to list properties and manage applications.`
+                                    );
+                                }}
+                                showChevron={true}
                             />
                         )}
                         <MenuRow
@@ -361,7 +376,9 @@ const LandlordProfileScreen = () => {
                     <Section title="SUPPORT">
                         <MenuRow
                             icon="help-circle-outline"
-                            label="Help & Support"
+                            label="Help & Support Desk"
+                            badge={tickets.length > 0 ? `${tickets.length}` : undefined}
+                            badgeColor="#1D4ED8"
                             onPress={() => router.push('/shared-screens/HelpSupportScreen')}
                         />
                         <MenuRow

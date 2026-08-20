@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     Alert,
+    KeyboardAvoidingView,
     Platform,
     ScrollView,
     StyleSheet,
@@ -27,13 +28,16 @@ import StepIndicator from '../../components/StepIndicator';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { BiodataForm, ModalKeys } from '../../types/biodata';
+import { supabase } from '../../lib/supabase';
 
 const EMPTY_FORM: BiodataForm = {
+    first_name: '',
+    last_name: '',
     phone_number: '',
     dob: '',
     gender: '',
     profile_photo: '',
-    id_type: '',
+    id_type: 'NIN',
     id_number: '',
     id_front_image: '',
     id_back_image: '',
@@ -55,10 +59,10 @@ const EMPTY_FORM: BiodataForm = {
 
 const BioDataScreen = () => {
     const { colors } = useTheme();
-    const { role } = useAuth();
+    const { role, user } = useAuth();
     const { submitBioData, isSubmitting } = useBioData();
     const { fetchBanks } = useBankDetails();
-    const router = useRouter()
+    const router = useRouter();
     const isLandlord = role === 'LANDLORD' || role === 'ADMIN';
     const STEP_LABELS = isLandlord
         ? ['Personal', 'Identity', 'Business', 'Next of Kin', 'Bank']
@@ -78,6 +82,53 @@ const BioDataScreen = () => {
         bank: false,
     });
 
+    // ── PRE-FILL USER DATA FROM DATABASE ──────────────────────────────────────
+    React.useEffect(() => {
+        const loadInitialData = async () => {
+            if (!user) return;
+            try {
+                const [userRes, bioRes, bankRes] = await Promise.all([
+                    supabase.from('users').select('first_name, last_name, is_verified, is_nin_verified').eq('id', user.id).maybeSingle(),
+                    supabase.from('user_biodata').select('*').eq('id', user.id).maybeSingle(),
+                    supabase.from('bank_accounts').select('*').eq('user_id', user.id).maybeSingle(),
+                ]);
+
+                const uData = userRes.data;
+                const bData = bioRes.data;
+                const bankData = bankRes.data;
+
+                setForm(prev => ({
+                    ...prev,
+                    first_name: uData?.first_name || user.user_metadata?.first_name || user.user_metadata?.firstName || prev.first_name,
+                    last_name: uData?.last_name || user.user_metadata?.last_name || user.user_metadata?.lastName || prev.last_name,
+                    phone_number: bData?.phone_number || prev.phone_number,
+                    dob: bData?.dob || prev.dob,
+                    gender: bData?.gender || prev.gender,
+                    profile_photo: bData?.profile_photo || prev.profile_photo,
+                    id_type: 'NIN',
+                    id_number: bData?.id_number || prev.id_number,
+                    is_nin_verified: Boolean(uData?.is_verified || uData?.is_nin_verified || bData?.kyc_status === 'verified'),
+                    employment_status: bData?.employment_status || prev.employment_status,
+                    employer_name: bData?.employer_name || prev.employer_name,
+                    monthly_income_range: bData?.monthly_income_range || prev.monthly_income_range,
+                    business_name: bData?.business_name || prev.business_name,
+                    cac_number: bData?.cac_number || prev.cac_number,
+                    next_of_kin_name: bData?.next_of_kin_name || prev.next_of_kin_name,
+                    next_of_kin_phone: bData?.next_of_kin_phone || prev.next_of_kin_phone,
+                    next_of_kin_relationship: bData?.next_of_kin_relationship || prev.next_of_kin_relationship,
+                    bank_name: bankData?.bank_name || prev.bank_name,
+                    account_number: bankData?.account_number || prev.account_number,
+                    account_name: bankData?.account_name || prev.account_name,
+                    bank_code: bankData?.bank_code || prev.bank_code,
+                }));
+            } catch (e) {
+                console.warn('[BioDataScreen] Pre-fill warning:', e);
+            }
+        };
+
+        loadInitialData();
+    }, [user]);
+
     // Fetch banks on mount
     React.useEffect(() => {
         const loadBanks = async () => {
@@ -89,7 +140,7 @@ const BioDataScreen = () => {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    const updateForm = (key: keyof BiodataForm, value: string) =>
+    const updateForm = (key: keyof BiodataForm, value: any) =>
         setForm(prev => ({ ...prev, [key]: value }));
 
     const openModal = (key: ModalKeys) =>
@@ -109,20 +160,19 @@ const BioDataScreen = () => {
         const currentStepLabel = STEP_LABELS[step];
 
         if (currentStepLabel === 'Personal') {
-            if (!form.phone_number.trim() || !form.dob || !form.gender) {
-                Alert.alert('Missing Info', 'Please fill in your phone number, date of birth, and gender.');
+            if (!form.first_name?.trim() || !form.last_name?.trim() || !form.phone_number.trim() || !form.dob || !form.gender) {
+                Alert.alert('Missing Info', 'Please fill in your legal First Name, Last Name, phone number, date of birth, and gender exactly as on your National ID.');
                 return false;
             }
         }
 
         if (currentStepLabel === 'Identity') {
-            // Identity Step validation logic:
-            // The user said "Except optional field and the id verification field"
-            // If they mean the whole step is optional, we skip.
-            // But usually ID Type and ID Number are basic biodata.
-            // I'll enforce ID Type and ID Number but keep images optional if they are considered "id verification field"
-            if (!form.id_type || !form.id_number.trim()) {
-                Alert.alert('Missing Info', 'Please select an ID type and enter your ID number.');
+            if (!form.id_number || form.id_number.trim().length !== 11) {
+                Alert.alert('NIN Required', 'Please enter your 11-digit National Identification Number (NIN).');
+                return false;
+            }
+            if (!form.is_nin_verified) {
+                Alert.alert('Verification Required', 'Please tap "Verify NIN with NIMC" to verify your National ID before continuing.');
                 return false;
             }
         }
@@ -175,14 +225,45 @@ const BioDataScreen = () => {
     };
 
     const handleSubmit = async () => {
-        const { error } = await submitBioData(form);
+        if (!form.is_nin_verified) {
+            Alert.alert('NIN Unverified', 'You must verify your National ID (NIN) with NIMC before completing registration.');
+            return;
+        }
+
+        const finalFirstName = (
+            form.first_name ||
+            user?.user_metadata?.first_name ||
+            user?.user_metadata?.firstName ||
+            ''
+        ).trim();
+
+        const finalLastName = (
+            form.last_name ||
+            user?.user_metadata?.last_name ||
+            user?.user_metadata?.lastName ||
+            ''
+        ).trim();
+
+        if (!finalFirstName || !finalLastName) {
+            Alert.alert(
+                'Missing Legal Name',
+                'Please ensure your legal First Name and Last Name are filled in Step 1.'
+            );
+            return;
+        }
+
+        const submissionData: BiodataForm = {
+            ...form,
+            first_name: finalFirstName,
+            last_name: finalLastName,
+        };
+
+        const { error } = await submitBioData(submissionData);
         if (error) {
             Alert.alert('Error', error);
             return;
         }
-        // Navigation is handled automatically by _layout.tsx
-        // after refreshBiodataStatus() updates completedBiodata = true
-        Alert.alert('Success 🎉', 'Your registration is complete!');
+        Alert.alert('Success 🎉', 'Your registration and NIN verification are complete!');
         if (role === 'LANDLORD') {
             router.replace('/landlord');
         } else {
@@ -212,7 +293,7 @@ const BioDataScreen = () => {
     // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <ScreenWrapper withScrollView={false} style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenWrapper withScrollView={true} style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
             <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
                 {step > 0 ? (
@@ -231,14 +312,20 @@ const BioDataScreen = () => {
 
             <StepIndicator currentStep={step} totalSteps={totalSteps} labels={STEP_LABELS} />
 
-            <ScrollView
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
             >
-                {STEPS[step]}
-            </ScrollView>
+                <ScrollView
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {STEPS[step]}
+                </ScrollView>
+            </KeyboardAvoidingView>
 
             {/* Footer */}
             <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.background }]}>

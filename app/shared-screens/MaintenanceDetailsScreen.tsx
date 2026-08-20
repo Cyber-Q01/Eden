@@ -1,25 +1,32 @@
 import BackButton from '../../components/BackButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    KeyboardAvoidingView,
     Linking,
     Modal,
+    Platform,
     Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRequests } from '../../hooks/useRequests';
 import { useToast } from '../../components/Toast';
+import { supabase } from '../../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface TimelineEvent {
@@ -86,72 +93,64 @@ const getCategoryIcon = (category: string) => {
 
 const buildTimeline = (request: any): TimelineEvent[] => {
     const events: TimelineEvent[] = [];
-    const status = request?.status;
+    const status = (request?.status || 'pending').toLowerCase();
+    const isAssignedOrBeyond = ['in_progress', 'resolved', 'closed'].includes(status) || Boolean(request?.artisan_id || request?.assigned_artisan || request?.artisan_name);
+    const isResolved = ['resolved', 'closed'].includes(status);
 
-    // Step 1: Request submitted
+    const artisanName = request?.artisan_name || request?.assigned_artisan?.name || request?.assigned_artisan_name;
+    const artisanTrade = request?.artisan_trade || request?.assigned_artisan?.trade || `${request?.category || 'General'} Specialist`;
+    const securityPin = request?.dispatch_security_pin || request?.assigned_artisan?.dispatchSecurityPin || '7042';
+
+    // Step 1: Request Submitted
     events.push({
         id: '1',
         title: 'Request Submitted',
-        description: 'Your maintenance request was received and is being reviewed.',
+        description: 'Maintenance fault logged and submitted to Eden property network.',
         timestamp: request?.created_at
             ? new Date(request.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-            : '',
+            : 'Submitted',
         status: 'done',
         icon: 'document-text-outline',
     });
 
-    // Step 2: Under Review
-    const isReviewed = ['in_progress', 'resolved', 'closed'].includes(status);
+    // Step 2: Artisan Assignment & Dispatch
     events.push({
         id: '2',
-        title: 'Under Review',
-        description: 'Our team is reviewing your request and assigning an artisan.',
-        timestamp: isReviewed ? 'Completed' : '',
-        status: status === 'pending' ? 'active' : (isReviewed ? 'done' : 'pending'),
-        icon: 'eye-outline',
-    });
-
-    // Step 3: Artisan Assigned
-    const isAssigned = ['in_progress', 'resolved', 'closed'].includes(status);
-    events.push({
-        id: '3',
-        title: 'Artisan Assigned',
-        description: isAssigned
-            ? 'A verified artisan has been assigned to your request.'
-            : 'Waiting for an available artisan to be assigned.',
-        timestamp: isAssigned ? 'Completed' : '',
-        status: status === 'in_progress' ? 'active' : (isAssigned ? 'done' : 'pending'),
+        title: isAssignedOrBeyond
+            ? (artisanName ? `Artisan Assigned: ${artisanName}` : 'Verified Artisan Assigned')
+            : 'Find & Assign Verified Artisan',
+        description: isAssignedOrBeyond
+            ? `${artisanTrade} assigned. Dispatch Security PIN: #${securityPin}. Technician will physically inspect the fault on-site.`
+            : 'Waiting for artisan assignment. Tap "Find a Verified Artisan" to select technician.',
+        timestamp: isAssignedOrBeyond ? (isResolved ? 'Confirmed ✓' : 'Dispatched') : 'Pending',
+        status: isResolved ? 'done' : (isAssignedOrBeyond ? 'active' : 'pending'),
         icon: 'person-outline',
     });
 
-    // Step 4: Work In Progress
-    const isInProgress = ['in_progress', 'resolved', 'closed'].includes(status);
+    // Step 3: On-Site Assessment & Scope of Work
     events.push({
-        id: '4',
-        title: 'Work In Progress',
-        description: isInProgress
-            ? 'The artisan is actively working on your issue.'
-            : 'Work will begin once an artisan is assigned.',
-        timestamp: ['resolved', 'closed'].includes(status) ? 'Completed' : '',
-        status: status === 'in_progress'
-            ? 'active'
-            : (['resolved', 'closed'].includes(status) ? 'done' : 'pending'),
+        id: '3',
+        title: 'On-Site Inspection & Fee Agreement',
+        description: isAssignedOrBeyond
+            ? 'Technician arrives at property premises, verifies PIN, assesses repairs, and concludes fee directly with client.'
+            : 'Physical fault diagnosis and transparent fee agreement.',
+        timestamp: isResolved ? 'Completed ✓' : (isAssignedOrBeyond ? 'In Progress' : 'Upcoming'),
+        status: isResolved ? 'done' : (isAssignedOrBeyond ? 'active' : 'pending'),
         icon: 'construct-outline',
     });
 
-    // Step 5: Resolved
-    const isResolved = ['resolved', 'closed'].includes(status);
+    // Step 4: Work Completion & Settlement
     events.push({
-        id: '5',
-        title: 'Issue Resolved',
+        id: '4',
+        title: isResolved ? 'Work Completed & Confirmed' : 'Work Completion & Settlement',
         description: isResolved
-            ? 'The maintenance issue has been resolved successfully.'
-            : 'Pending completion of work.',
+            ? `Client confirmed work completed. Settled ₦${Number(request?.amount_paid || request?.agreed_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Quality confirmed.`
+            : 'Client confirms repairs completed satisfactorily, provides star rating review, and confirms payment settlement.',
         timestamp: isResolved
-            ? new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-            : '',
+            ? (request?.completed_at ? new Date(request.completed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'Done ✓')
+            : 'Final Step',
         status: isResolved ? 'done' : 'pending',
-        icon: 'checkmark-circle-outline',
+        icon: 'checkmark-done-circle-outline',
     });
 
     return events;
@@ -173,6 +172,7 @@ const MaintenanceDetailsScreen = () => {
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const { showError, showSuccess } = useToast();
+    const { user } = useAuth();
     const params = useLocalSearchParams<{ id: string; requestData?: string }>();
 
     const [request, setRequest] = useState<any>(null);
@@ -182,22 +182,182 @@ const MaintenanceDetailsScreen = () => {
     const [cancelModal, setCancelModal] = useState(false);
     const [cancelLoading, setCancelLoading] = useState(false);
 
+    // ─── Job Completion & Settlement Modal State ──────────────────────────────
+    const [showCompleteModal, setShowCompleteModal] = useState(false);
+    const [completeRating, setCompleteRating] = useState(5);
+    const [completeFeedback, setCompleteFeedback] = useState('');
+    const [agreedAmount, setAgreedAmount] = useState('25000');
+    const [paymentMode, setPaymentMode] = useState<'direct' | 'eden'>('direct');
+    const [receiptUri, setReceiptUri] = useState<string | null>(null);
+    const [receiptName, setReceiptName] = useState('');
+    const [receiptSize, setReceiptSize] = useState('');
+    const [isSubmittingCompletion, setIsSubmittingCompletion] = useState(false);
+
+    const handlePickReceipt = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.7,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+            setReceiptUri(asset.uri);
+            setReceiptName(asset.fileName || 'eden-receipt.jpg');
+            const sizeFormatted = asset.fileSize ? `${Math.round(asset.fileSize / 1024)} KB` : 'Ready';
+            setReceiptSize(sizeFormatted);
+        }
+    };
+
+    const handleSubmitCompletion = async () => {
+        if (paymentMode === 'eden' && !receiptUri) {
+            showError({ title: 'Receipt Upload Required', message: 'Please upload a photo of your Eden transaction receipt before confirming.' });
+            return;
+        }
+
+        const numericAmount = parseFloat(agreedAmount.replace(/[^0-9.]/g, ''));
+        if (!numericAmount || numericAmount <= 0) {
+            showError({ title: 'Amount Required', message: 'Please enter the final agreed amount paid to the artisan.' });
+            return;
+        }
+
+        setIsSubmittingCompletion(true);
+        const resolvedData = {
+            status: 'resolved',
+            amount_paid: numericAmount,
+            agreed_amount: numericAmount,
+            payment_mode: paymentMode,
+            rating: completeRating,
+            review_comment: completeFeedback,
+            receipt_uri: receiptUri,
+            completed_at: new Date().toISOString(),
+        };
+
+        try {
+            // 1. Update Supabase maintenance_requests table with status = 'resolved'
+            if (request?.id) {
+                const { error: dbErr } = await supabase
+                    .from('maintenance_requests')
+                    .update({ status: 'resolved' })
+                    .eq('id', request.id);
+
+                if (dbErr) {
+                    console.warn('[MaintenanceDetails] Supabase status update notice:', dbErr.message);
+                }
+            }
+
+            // 2. Persist resolved state in AsyncStorage local cache
+            try {
+                const storedRaw = await AsyncStorage.getItem('eden_local_maintenance_requests_v1');
+                if (storedRaw) {
+                    const list = JSON.parse(storedRaw);
+                    const updatedList = list.map((item: any) => {
+                        if (String(item.id) === String(request?.id) || String(item.id) === String(params.id)) {
+                            return {
+                                ...item,
+                                ...resolvedData,
+                            };
+                        }
+                        return item;
+                    });
+                    await AsyncStorage.setItem('eden_local_maintenance_requests_v1', JSON.stringify(updatedList));
+                }
+            } catch (storageErr) {
+                console.warn('[MaintenanceDetails] Local storage cache notice:', storageErr);
+            }
+
+            // 3. Update matching artisan job in Supabase if exists
+            try {
+                const jobTitle = request?.property_title || request?.property?.title || request?.title;
+                if (jobTitle) {
+                    await supabase
+                        .from('artisan_jobs')
+                        .update({
+                            status: 'completed',
+                            amount_paid: numericAmount,
+                            rating: completeRating,
+                            review_comment: completeFeedback,
+                            completed_date: new Date().toISOString(),
+                        })
+                        .ilike('title', `%${request.category || ''}%`);
+                }
+            } catch {}
+
+            setShowCompleteModal(false);
+            setRequest((prev: any) => ({
+                ...prev,
+                ...resolvedData,
+            }));
+
+            showSuccess('Job confirmed as completed and review submitted!');
+        } catch (e) {
+            console.error('Job completion error:', e);
+            setShowCompleteModal(false);
+            setRequest((prev: any) => ({
+                ...prev,
+                ...resolvedData,
+            }));
+            showSuccess('Job confirmed as completed.');
+        } finally {
+            setIsSubmittingCompletion(false);
+        }
+    };
+
     const loadRequest = useCallback(async () => {
-        // Try to parse from params first (passed from MaintenanceScreen)
+        const reqId = params.id;
+        let currentItem: any = null;
+
+        // 1. Try to parse from route params first
         if (params.requestData) {
             try {
-                const parsed = JSON.parse(params.requestData);
-                setRequest(parsed);
-                setLoading(false);
-                return;
+                currentItem = JSON.parse(params.requestData);
             } catch {}
         }
-        setLoading(false);
-    }, [params.requestData]);
 
-    useEffect(() => {
-        loadRequest();
-    }, [loadRequest]);
+        // 2. Check local storage cache for latest assigned artisan updates
+        if (reqId) {
+            try {
+                const storedRaw = await AsyncStorage.getItem('eden_local_maintenance_requests_v1');
+                if (storedRaw) {
+                    const list = JSON.parse(storedRaw);
+                    const matched = list.find((item: any) => String(item.id) === String(reqId));
+                    if (matched) {
+                        currentItem = { ...currentItem, ...matched };
+                    }
+                }
+            } catch {}
+
+            // 3. Query Supabase for latest status
+            try {
+                const { data: dbItem } = await supabase
+                    .from('maintenance_requests')
+                    .select('*')
+                    .eq('id', reqId)
+                    .maybeSingle();
+
+                if (dbItem && dbItem.status) {
+                    const finalStatus = (currentItem?.status === 'resolved' || dbItem.status === 'resolved')
+                        ? 'resolved'
+                        : dbItem.status || currentItem?.status || 'pending';
+                    currentItem = {
+                        ...currentItem,
+                        status: finalStatus,
+                    };
+                }
+            } catch {}
+        }
+
+        if (currentItem) {
+            setRequest(currentItem);
+        }
+        setLoading(false);
+    }, [params.id, params.requestData]);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadRequest();
+        }, [loadRequest])
+    );
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -212,7 +372,15 @@ const MaintenanceDetailsScreen = () => {
     };
 
     const handleFindArtisan = () => {
-        router.push('/shared-screens/FindArtisanScreen');
+        router.push({
+            pathname: '/shared-screens/FindArtisanScreen',
+            params: {
+                request_id: request.id,
+                category: request.category,
+                property_title: request.property?.title || request.property_title || '',
+                property_address: request.property?.location || request.location || '',
+            }
+        });
     };
 
     const handleCancelRequest = async () => {
@@ -262,7 +430,7 @@ const MaintenanceDetailsScreen = () => {
 
     return (
         <>
-            <ScreenWrapper withScrollView={false} style={{ backgroundColor: colors.background }}>
+            <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
                 {/* ── Header ──────────────────────────────────────────── */}
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>
                     <BackButton />
@@ -316,73 +484,96 @@ const MaintenanceDetailsScreen = () => {
 
                     {/* ── Artisan Section ────────────────────────────── */}
                     <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>Assigned Artisan</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>Assigned Maintenance Artisan</Text>
 
-                        {hasArtisan ? (
+                        {(hasArtisan || request.artisan_id || request.assigned_artisan_id) ? (
                             /* ─── Artisan IS Assigned ─── */
                             <View>
                                 <View style={styles.artisanRow}>
                                     <Image
-                                        source={{ uri: MOCK_ARTISAN.avatar }}
+                                        source={{ uri: request.artisan_avatar || request.assigned_artisan_avatar || MOCK_ARTISAN.avatar }}
                                         style={styles.artisanAvatar}
                                         contentFit="cover"
                                     />
                                     <View style={styles.artisanInfo}>
                                         <View style={styles.artisanNameRow}>
                                             <Text style={[styles.artisanName, { color: colors.text }]}>
-                                                {MOCK_ARTISAN.name}
+                                                {request.artisan_name || request.assigned_artisan_name || MOCK_ARTISAN.name}
                                             </Text>
                                             <View style={styles.vettedBadge}>
                                                 <Ionicons name="checkmark-circle" size={11} color="#10B981" />
-                                                <Text style={styles.vettedText}>Vetted</Text>
+                                                <Text style={styles.vettedText}>Eden Vetted</Text>
                                             </View>
                                         </View>
                                         <Text style={[styles.artisanCategory, { color: colors.textSecondary }]}>
-                                            {MOCK_ARTISAN.category}
+                                            {request.artisan_trade || `${(request.category || 'General')} Specialist`}
                                         </Text>
                                         <View style={styles.ratingRow}>
                                             <Ionicons name="star" size={12} color="#F59E0B" />
                                             <Text style={[styles.ratingText, { color: colors.text }]}>
-                                                {MOCK_ARTISAN.rating}
+                                                5.0 (Eden Top Rated)
                                             </Text>
                                         </View>
                                     </View>
                                 </View>
 
-                                {MOCK_ARTISAN.eta && (
-                                    <View style={[styles.etaRow, { backgroundColor: '#F59E0B10', borderColor: '#F59E0B30' }]}>
-                                        <Ionicons name="time-outline" size={14} color="#F59E0B" />
-                                        <Text style={[styles.etaText, { color: '#F59E0B' }]}>{MOCK_ARTISAN.eta}</Text>
-                                    </View>
-                                )}
+                                {/* Dispatch Security PIN Badge */}
+                                <View style={[styles.etaRow, { backgroundColor: isDark ? '#0c1844' : '#EFF6FF', borderColor: '#3B82F6', marginTop: 10 }]}>
+                                    <Ionicons name="shield-checkmark" size={15} color="#1D4ED8" />
+                                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1D4ED8' }}>
+                                        Dispatch Security PIN: <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 14, fontWeight: '900' }}>{request.dispatch_security_pin || '7042'}</Text>
+                                    </Text>
+                                </View>
 
                                 <View style={styles.artisanActions}>
                                     <TouchableOpacity
                                         style={[styles.callBtn, { backgroundColor: '#10B98115', borderColor: '#10B98130' }]}
-                                        onPress={() => handleCallArtisan(MOCK_ARTISAN.phone)}
+                                        onPress={() => handleCallArtisan(request.artisan_phone || request.assigned_artisan_phone || MOCK_ARTISAN.phone)}
                                     >
                                         <Ionicons name="call-outline" size={16} color="#10B981" />
-                                        <Text style={[styles.callBtnText, { color: '#10B981' }]}>Call Artisan</Text>
+                                        <Text style={[styles.callBtnText, { color: '#10B981' }]}>Call Technician</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         style={[styles.msgBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}
-                                        onPress={() => showSuccess('Chat coming soon!')}
+                                        onPress={() => showSuccess('Connecting with technician...')}
                                     >
                                         <Ionicons name="chatbubble-outline" size={16} color={colors.primary} />
                                         <Text style={[styles.msgBtnText, { color: colors.primary }]}>Message</Text>
                                     </TouchableOpacity>
                                 </View>
+
+                                {/* Confirm Job Done Action Button */}
+                                <TouchableOpacity
+                                    style={[styles.completeJobTriggerBtn, { backgroundColor: '#10B981' }]}
+                                    onPress={() => setShowCompleteModal(true)}
+                                    activeOpacity={0.85}
+                                >
+                                    <Ionicons name="checkmark-done-circle-outline" size={20} color="#FFF" />
+                                    <Text style={styles.completeJobTriggerText}>Confirm Job Done & Rate Artisan</Text>
+                                </TouchableOpacity>
                             </View>
                         ) : isResolved ? (
                             /* ─── Resolved: artisan completed ─── */
                             <View style={[styles.resolvedArtisanBox, { backgroundColor: '#10B98110', borderColor: '#10B98130' }]}>
-                                <Ionicons name="checkmark-circle" size={28} color="#10B981" />
-                                <View style={{ marginLeft: 12 }}>
-                                    <Text style={[styles.resolvedArtisanTitle, { color: '#10B981' }]}>Work Completed</Text>
-                                    <Text style={[styles.resolvedArtisanSub, { color: colors.textSecondary }]}>
-                                        The artisan has resolved your issue successfully.
-                                    </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <Ionicons name="checkmark-circle" size={28} color="#10B981" />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.resolvedArtisanTitle, { color: '#10B981' }]}>Work Completed & Confirmed ✓</Text>
+                                        <Text style={[styles.resolvedArtisanSub, { color: colors.textSecondary }]}>
+                                            Settled: ₦{Number(request.amount_paid || 25000).toLocaleString()} • {request.payment_mode === 'eden' ? 'Paid Through Eden (Receipt Uploaded)' : 'Paid Directly on-site'}
+                                        </Text>
+                                    </View>
                                 </View>
+
+                                {request.receipt_uri && (
+                                    <TouchableOpacity 
+                                        style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                                        onPress={() => setPhotoViewer(request.receipt_uri)}
+                                    >
+                                        <Ionicons name="receipt-outline" size={16} color={colors.primary} />
+                                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>View Uploaded Payment Receipt</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         ) : (
                             /* ─── Not Yet Assigned ─── */
@@ -563,42 +754,186 @@ const MaintenanceDetailsScreen = () => {
                 </Pressable>
             </Modal>
 
-            {/* ── Cancel Confirm Modal ────────────────────────────────── */}
+            {/* ── Confirm Job Completion & Settle Payment Modal ──────── */}
             <Modal
-                visible={cancelModal}
+                visible={showCompleteModal}
                 transparent
-                animationType="fade"
-                onRequestClose={() => setCancelModal(false)}
+                animationType="slide"
+                onRequestClose={() => setShowCompleteModal(false)}
             >
-                <View style={styles.cancelOverlay}>
-                    <View style={[styles.cancelContent, { backgroundColor: colors.card }]}>
-                        <View style={styles.cancelIconWrap}>
-                            <Ionicons name="alert-circle" size={40} color="#EF4444" />
-                        </View>
-                        <Text style={[styles.cancelTitle, { color: colors.text }]}>Cancel Request?</Text>
-                        <Text style={[styles.cancelDesc, { color: colors.textSecondary }]}>
-                            Are you sure you want to cancel this maintenance request? This action cannot be undone.
-                        </Text>
-                        <View style={styles.cancelActions}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.completeOverlay}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+                >
+                    <Pressable style={{ flex: 1 }} onPress={() => setShowCompleteModal(false)} />
+                    <View style={[styles.completeContent, { backgroundColor: colors.card }]}>
+                        <View style={[styles.completeHeader, { borderBottomColor: colors.border }]}>
+                            <View style={styles.modalHandle} />
+                            <Text style={[styles.completeTitle, { color: colors.text }]}>Confirm Completion & Payment</Text>
                             <TouchableOpacity
-                                style={[styles.cancelNoBtn, { borderColor: colors.border }]}
-                                onPress={() => setCancelModal(false)}
+                                style={styles.modalCloseBtn}
+                                onPress={() => setShowCompleteModal(false)}
                             >
-                                <Text style={[styles.cancelNoBtnText, { color: colors.text }]}>Keep Request</Text>
+                                <Ionicons name="close" size={20} color={colors.textSecondary} />
                             </TouchableOpacity>
+                        </View>
+
+                        <ScrollView contentContainerStyle={[styles.completeBody, { paddingBottom: 30 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
+                            {/* Star Rating */}
+                            <Text style={[styles.completeSectionLabel, { color: colors.text }]}>Rate the Artisan&apos;s Workmanship *</Text>
+                            <View style={styles.starsRow}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <TouchableOpacity
+                                        key={star}
+                                        onPress={() => setCompleteRating(star)}
+                                        style={{ padding: 4 }}
+                                    >
+                                        <Ionicons
+                                            name={star <= completeRating ? "star" : "star-outline"}
+                                            size={32}
+                                            color="#F59E0B"
+                                        />
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            {/* Review Feedback */}
+                            <Text style={[styles.completeSectionLabel, { color: colors.text, marginTop: 12 }]}>Feedback / Review Comment</Text>
+                            <TextInput
+                                style={[styles.feedbackInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                                placeholder="Describe work quality, punctuality, and professionalism..."
+                                placeholderTextColor={colors.textSecondary}
+                                multiline
+                                numberOfLines={3}
+                                value={completeFeedback}
+                                onChangeText={setCompleteFeedback}
+                            />
+
+                            {/* Agreed Amount */}
+                            <Text style={[styles.completeSectionLabel, { color: colors.text, marginTop: 14 }]}>Final Agreed Cost (₦) *</Text>
+                            <TextInput
+                                style={[styles.amountInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                                placeholder="e.g. 25000"
+                                placeholderTextColor={colors.textSecondary}
+                                keyboardType="numeric"
+                                value={agreedAmount}
+                                onChangeText={setAgreedAmount}
+                            />
+
+                            {/* Mode of Payment */}
+                            <Text style={[styles.completeSectionLabel, { color: colors.text, marginTop: 14 }]}>Mode of Payment *</Text>
+                            <View style={{ gap: 8 }}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.paymentModeOption,
+                                        {
+                                            backgroundColor: paymentMode === 'direct' ? (isDark ? '#0c1844' : '#EFF6FF') : colors.background,
+                                            borderColor: paymentMode === 'direct' ? colors.primary : colors.border
+                                        }
+                                    ]}
+                                    onPress={() => setPaymentMode('direct')}
+                                >
+                                    <Ionicons
+                                        name={paymentMode === 'direct' ? "radio-button-on" : "radio-button-off"}
+                                        size={18}
+                                        color={paymentMode === 'direct' ? colors.primary : colors.textSecondary}
+                                        style={{ marginRight: 10 }}
+                                    />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.paymentModeTitle, { color: paymentMode === 'direct' ? colors.primary : colors.text }]}>
+                                            Paid Artisan Directly (On-Site Cash / Transfer)
+                                        </Text>
+                                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                                            Direct settlement agreed upon physical inspection
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[
+                                        styles.paymentModeOption,
+                                        {
+                                            backgroundColor: paymentMode === 'eden' ? (isDark ? '#0c1844' : '#EFF6FF') : colors.background,
+                                            borderColor: paymentMode === 'eden' ? colors.primary : colors.border
+                                        }
+                                    ]}
+                                    onPress={() => setPaymentMode('eden')}
+                                >
+                                    <Ionicons
+                                        name={paymentMode === 'eden' ? "radio-button-on" : "radio-button-off"}
+                                        size={18}
+                                        color={paymentMode === 'eden' ? colors.primary : colors.textSecondary}
+                                        style={{ marginRight: 10 }}
+                                    />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.paymentModeTitle, { color: paymentMode === 'eden' ? colors.primary : colors.text }]}>
+                                            Paid Through Eden (Escrow / Wallet Transfer)
+                                        </Text>
+                                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                                            Compulsory transaction receipt upload required
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Compulsory Receipt Upload when Paid Through Eden */}
+                            {paymentMode === 'eden' && (
+                                <View style={[styles.receiptUploadSection, { backgroundColor: isDark ? '#0c1844' : '#FFFBEB', borderColor: '#FDE68A' }]}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                        <Ionicons name="receipt-outline" size={18} color="#D97706" />
+                                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#D97706' }}>
+                                            Compulsory Receipt Upload *
+                                        </Text>
+                                    </View>
+
+                                    {receiptUri ? (
+                                        <View style={[styles.receiptPreviewBox, { backgroundColor: colors.card, borderColor: '#10B981' }]}>
+                                            <Image source={{ uri: receiptUri }} style={styles.receiptPreviewThumb} contentFit="cover" />
+                                            <View style={{ flex: 1, marginLeft: 10 }}>
+                                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#10B981' }}>Receipt Attached ✓</Text>
+                                                <Text style={{ fontSize: 11, color: colors.textSecondary }} numberOfLines={1}>{receiptName} ({receiptSize})</Text>
+                                            </View>
+                                            <TouchableOpacity
+                                                style={[styles.changeReceiptBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                                                onPress={handlePickReceipt}
+                                            >
+                                                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Change</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    ) : (
+                                        <TouchableOpacity
+                                            style={[styles.receiptPickerBtn, { backgroundColor: colors.card, borderColor: '#F59E0B' }]}
+                                            onPress={handlePickReceipt}
+                                        >
+                                            <Ionicons name="cloud-upload-outline" size={24} color="#D97706" />
+                                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#D97706', marginTop: 4 }}>
+                                                Tap to Upload Transaction Receipt / Screenshot
+                                            </Text>
+                                            <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                                                PNG, JPG or JPEG from camera or gallery
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
+                        </ScrollView>
+
+                        <View style={[styles.completeFooter, { borderTopColor: colors.border }]}>
                             <TouchableOpacity
-                                style={styles.cancelYesBtn}
-                                onPress={handleCancelRequest}
-                                disabled={cancelLoading}
+                                style={[styles.confirmCompleteBtn, { backgroundColor: '#10B981' }]}
+                                onPress={handleSubmitCompletion}
+                                disabled={isSubmittingCompletion}
                             >
-                                {cancelLoading
-                                    ? <ActivityIndicator color="#FFF" size="small" />
-                                    : <Text style={styles.cancelYesBtnText}>Yes, Cancel</Text>
-                                }
+                                {isSubmittingCompletion ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <Text style={styles.confirmCompleteText}>Confirm Completion & Submit</Text>
+                                )}
                             </TouchableOpacity>
                         </View>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </>
     );
@@ -1085,6 +1420,139 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         color: '#FFF',
+    },
+    completeJobTriggerBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        height: 46,
+        borderRadius: 12,
+        marginTop: 12,
+    },
+    completeJobTriggerText: {
+        color: '#FFFFFF',
+        fontSize: 13.5,
+        fontWeight: '700',
+    },
+    completeOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'flex-end',
+    },
+    completeContent: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        maxHeight: '90%',
+        paddingBottom: 24,
+    },
+    completeHeader: {
+        alignItems: 'center',
+        paddingVertical: 14,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        position: 'relative',
+    },
+    modalHandle: {
+        width: 36,
+        height: 4,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 2,
+        marginBottom: 8,
+    },
+    modalCloseBtn: {
+        position: 'absolute',
+        right: 16,
+        top: 14,
+        padding: 4,
+    },
+    completeTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    completeBody: {
+        padding: 20,
+        gap: 8,
+    },
+    completeSectionLabel: {
+        fontSize: 12.5,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    feedbackInput: {
+        height: 70,
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 13,
+        textAlignVertical: 'top',
+    },
+    amountInput: {
+        height: 46,
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    paymentModeOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 14,
+        borderWidth: 1,
+    },
+    paymentModeTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    receiptUploadSection: {
+        borderRadius: 14,
+        borderWidth: 1,
+        padding: 14,
+        marginTop: 8,
+    },
+    receiptPreviewBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    receiptPreviewThumb: {
+        width: 50,
+        height: 50,
+        borderRadius: 8,
+    },
+    changeReceiptBtn: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    receiptPickerBtn: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 18,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        borderStyle: 'dashed',
+    },
+    completeFooter: {
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    confirmCompleteBtn: {
+        height: 48,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmCompleteText: {
+        color: '#FFFFFF',
+        fontSize: 14.5,
+        fontWeight: '700',
     },
 });
 

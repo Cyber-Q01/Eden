@@ -1,5 +1,7 @@
 // Shared form type used across all biodata step components
 export type BiodataForm = {
+    first_name?: string;
+    last_name?: string;
     phone_number: string;
     dob: string;
     gender: string;
@@ -8,6 +10,7 @@ export type BiodataForm = {
     id_number: string;
     id_front_image: string;
     id_back_image: string;
+    is_nin_verified?: boolean;
     employment_status: string;
     employer_name: string;
     monthly_income_range: string;

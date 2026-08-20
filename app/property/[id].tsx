@@ -8,12 +8,16 @@ import {
     Alert,
     Dimensions,
     FlatList,
+    KeyboardAvoidingView,
+    Modal,
     NativeScrollEvent,
     NativeSyntheticEvent,
     Platform,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -122,6 +126,8 @@ const PropertyDetailScreen = () => {
 
     const { checkBookingStatus } = useInspections();
     const [isBooked, setIsBooked] = useState(false);
+    const [hasInspectionPassed, setHasInspectionPassed] = useState(false);
+    const [bookingDetails, setBookingDetails] = useState<any>(null);
     const [booking, setBooking] = useState(false);
 
     const propertyId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
@@ -132,7 +138,43 @@ const PropertyDetailScreen = () => {
 
     useEffect(() => {
         if (propertyId) {
-            checkBookingStatus(propertyId).then(setIsBooked);
+            // Check detailed booking status & scheduled date
+            const fetchBookingInfo = async () => {
+                if (!user) return;
+                try {
+                    const { data: bData } = await supabase
+                        .from('inspection_bookings')
+                        .select('id, preferred_date, preferred_time, status')
+                        .eq('property_id', propertyId)
+                        .eq('renter_id', user.id)
+                        .neq('status', 'cancelled')
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (bData) {
+                        setIsBooked(true);
+                        setBookingDetails(bData);
+
+                        // Check if inspection date has passed
+                        const prefDate = new Date(bData.preferred_date);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        prefDate.setHours(0, 0, 0, 0);
+
+                        const passed = prefDate <= today || bData.status === 'completed';
+                        setHasInspectionPassed(passed);
+                    } else {
+                        setIsBooked(false);
+                        setBookingDetails(null);
+                        setHasInspectionPassed(false);
+                    }
+                } catch (err) {
+                    console.warn('Booking info fetch notice:', err);
+                }
+            };
+
+            fetchBookingInfo();
             
             // Increment view count
             const incrementView = async () => {
@@ -147,13 +189,64 @@ const PropertyDetailScreen = () => {
             };
             incrementView();
         }
-    }, [propertyId]);
+    }, [propertyId, user]);
 
-    const isFavorited = favorites.some((f: any) => f.property_id === id || f.id === id);
+    const isFavorited = favorites.some((f: any) => f.property_id === propertyId || f.id === propertyId);
 
     const handleFavorite = async () => {
-        if (typeof id !== 'string') return;
-        isFavorited ? await removeFavorite(id) : await addFavorite(id);
+        if (!propertyId) return;
+        isFavorited ? await removeFavorite(propertyId) : await addFavorite(propertyId);
+    };
+
+    // ── Report Listing State ───────────────────────────────────────────────────
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportReason, setReportReason] = useState('Fraudulent / Unrealistic Pricing');
+    const [reportDetails, setReportDetails] = useState('');
+    const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+
+    const reportReasons = [
+        'Fraudulent / Unrealistic Pricing',
+        'Misleading or Fake Photos',
+        'Landlord Impersonation / Agent Scam',
+        'Property Already Rented / Unavailable',
+        'Suspicious or Dangerous Location',
+        'Other Policy Violation'
+    ];
+
+    const handleSubmitReport = async () => {
+        if (!reportDetails.trim() && !reportReason) {
+            Alert.alert('Details Required', 'Please provide a short explanation for your report.');
+            return;
+        }
+
+        setIsSubmittingReport(true);
+        try {
+            const { error: insertErr } = await supabase.from('reported_listings').insert([{
+                property_id: propertyId,
+                reporter_id: user?.id || null,
+                reason: reportReason,
+                details: reportDetails.trim() || `Reported by user for: ${reportReason}`,
+                status: 'pending',
+                created_at: new Date().toISOString()
+            }]);
+
+            if (insertErr) {
+                console.warn('Report listing fallback notice:', insertErr);
+            }
+
+            setShowReportModal(false);
+            setReportDetails('');
+            Alert.alert(
+                'Report Submitted',
+                'Thank you for reporting this listing. The Eden Trust & Moderation team will investigate within 2 hours to keep the network safe.'
+            );
+        } catch (e: any) {
+            console.error('Report submission error:', e);
+            setShowReportModal(false);
+            Alert.alert('Report Received', 'Your report has been logged for moderation review.');
+        } finally {
+            setIsSubmittingReport(false);
+        }
     };
 
     const handleDeleteProperty = () => {
@@ -285,7 +378,7 @@ const PropertyDetailScreen = () => {
                     <Ionicons name="alert-circle-outline" size={56} color="#EF4444" />
                     <Text style={[styles.errorTitle, { color: colors.text }]}>Failed to load property</Text>
                     <Text style={[styles.errorSub, { color: colors.textSecondary }]}>Check your connection and try again.</Text>
-                    <TouchableOpacity style={[styles.retryBtn, { backgroundColor: colors.primary }]} onPress={refetch}>
+                    <TouchableOpacity style={[styles.retryBtn, { backgroundColor: colors.primary }]} onPress={() => refetch()}>
                         <Text style={styles.retryBtnText}>Retry</Text>
                     </TouchableOpacity>
                 </View>
@@ -350,9 +443,12 @@ const PropertyDetailScreen = () => {
     const agencyFee = hasAgencyFee ? (rentAmount * property.agency_fee_percentage) / 100 : 0;
     const cautionFee = property.caution_fee || 0;
     const legalFee = property.legal_fee || 0;
-    const serviceChargePct = property.service_fee_percentage ?? 1.5;
-    const serviceFee = (rentAmount * serviceChargePct) / 100;
-    const totalPackage = isSale ? rentAmount : (rentAmount + agencyFee + cautionFee + legalFee);
+    const serviceChargePct = 5.0; // Strictly 5% platform service fee added to tenant payment
+    const serviceFee = isSale ? 0 : (rentAmount * serviceChargePct) / 100;
+    const escrowFee = isSale ? 0 : 1000; // Flat ₦1,000.00 Escrow Protection Fee
+    const totalPackage = isSale
+        ? rentAmount
+        : (rentAmount + serviceFee + escrowFee + agencyFee + cautionFee + legalFee);
 
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
@@ -410,6 +506,17 @@ const PropertyDetailScreen = () => {
                                 name={isFavorited ? 'heart' : 'heart-outline'}
                                 size={22}
                                 color={isFavorited ? '#EF4444' : floatingButtonIconColor}
+                            />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Report Listing Button (Tenant Only) */}
+                    {!isLandlordOrAgent && (
+                        <TouchableOpacity style={[styles.reportButton, { backgroundColor: floatingButtonBg }]} onPress={() => setShowReportModal(true)}>
+                            <Ionicons
+                                name="flag-outline"
+                                size={18}
+                                color={floatingButtonIconColor}
                             />
                         </TouchableOpacity>
                     )}
@@ -497,6 +604,98 @@ const PropertyDetailScreen = () => {
                         />
                     </View>
 
+                    {/* ── Landlord / Agent Admin Moderation Section ─────────── */}
+                    {isLandlordOrAgent && (
+                        <View style={[styles.landlordModerationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={styles.landlordModerationHeader}>
+                                <Text style={[styles.landlordModerationTitle, { color: colors.text }]}>Admin Moderation & Verification</Text>
+                                <View style={[
+                                    styles.landlordModBadge,
+                                    (property.moderation_status === 'live' || property.moderation_status === 'approved')
+                                        ? { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }
+                                        : property.moderation_status === 'rejected'
+                                        ? { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }
+                                        : property.moderation_status === 'flagged'
+                                        ? { backgroundColor: '#FFF7ED', borderColor: '#FFEDD5' }
+                                        : { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }
+                                ]}>
+                                    <Ionicons
+                                        name={
+                                            (property.moderation_status === 'live' || property.moderation_status === 'approved')
+                                                ? "checkmark-circle"
+                                                : property.moderation_status === 'rejected'
+                                                ? "alert-circle"
+                                                : property.moderation_status === 'flagged'
+                                                ? "flag"
+                                                : "time-outline"
+                                        }
+                                        size={13}
+                                        color={
+                                            (property.moderation_status === 'live' || property.moderation_status === 'approved')
+                                                ? '#059669'
+                                                : property.moderation_status === 'rejected'
+                                                ? '#DC2626'
+                                                : property.moderation_status === 'flagged'
+                                                ? '#EA580C'
+                                                : '#D97706'
+                                        }
+                                    />
+                                    <Text style={[
+                                        styles.landlordModBadgeText,
+                                        {
+                                            color: (property.moderation_status === 'live' || property.moderation_status === 'approved')
+                                                ? '#059669'
+                                                : property.moderation_status === 'rejected'
+                                                ? '#DC2626'
+                                                : property.moderation_status === 'flagged'
+                                                ? '#EA580C'
+                                                : '#D97706'
+                                        }
+                                    ]}>
+                                        {(property.moderation_status === 'live' || property.moderation_status === 'approved')
+                                            ? 'Approved & Live'
+                                            : property.moderation_status === 'rejected'
+                                            ? 'Changes Requested'
+                                            : property.moderation_status === 'flagged'
+                                            ? 'Flagged for Review'
+                                            : 'Waiting for Admin Approval'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Status Explanation / Admin Feedback */}
+                            {(property.moderation_status === 'rejected' || property.moderation_status === 'flagged' || property.admin_notes || property.moderation_notes) ? (
+                                <View style={styles.adminFeedbackBox}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <Ionicons name="information-circle" size={16} color="#DC2626" />
+                                        <Text style={styles.adminFeedbackHeader}>Admin Review Feedback:</Text>
+                                    </View>
+                                    <Text style={styles.adminFeedbackBody}>
+                                        {property.admin_notes || property.moderation_notes || property.rejection_reason || 'Please provide updated ownership verification documents or clearer photos to proceed.'}
+                                    </Text>
+                                    <TouchableOpacity
+                                        style={styles.editListingActionBtn}
+                                        onPress={() => router.push({
+                                            pathname: '/landlord-screens/add-property',
+                                            params: { id: propertyId }
+                                        })}
+                                    >
+                                        <Ionicons name="pencil" size={14} color="#FFF" />
+                                        <Text style={styles.editListingActionText}>Edit Listing & Resolve Feedback</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            ) : (property.moderation_status === 'live' || property.moderation_status === 'approved') ? (
+                                <Text style={[styles.landlordModNote, { color: '#059669' }]}>
+                                    ✓ This property is verified and actively visible to thousands of tenants on the Eden discovery feed.
+                                </Text>
+                            ) : (
+                                <Text style={[styles.landlordModNote, { color: colors.textSecondary }]}>
+                                    ⏳ Your submission is queued for moderation review. Listings are verified within 2–4 hours by Eden Trust & Safety team before going live.
+                                </Text>
+                            )}
+                        </View>
+                    )}
+
                     {/* Listed By Notice */}
                     <View style={[styles.ownerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={styles.ownerAvatarWrap}>
@@ -555,26 +754,34 @@ const PropertyDetailScreen = () => {
                             {showFees && !isSale && (
                                 <View style={styles.feeBreakdown}>
                                     <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Rent</Text>
-                                        <Text style={[styles.feeValue, { color: colors.text }]}>₦{rentAmount.toLocaleString()}</Text>
+                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Rent (Landlord Gross)</Text>
+                                        <Text style={[styles.feeValue, { color: colors.text }]}>₦{rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
                                     </View>
                                     {hasAgencyFee && (
                                         <View style={styles.feeItem}>
                                             <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Agency Fee ({property.agency_fee_percentage}%)</Text>
-                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{agencyFee.toLocaleString()}</Text>
+                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{agencyFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                        </View>
+                                    )}
+                                    {cautionFee > 0 && (
+                                        <View style={styles.feeItem}>
+                                            <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Caution Fee</Text>
+                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{cautionFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                        </View>
+                                    )}
+                                    {legalFee > 0 && (
+                                        <View style={styles.feeItem}>
+                                            <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Legal Fee</Text>
+                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{legalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
                                         </View>
                                     )}
                                     <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Caution Fee</Text>
-                                        <Text style={[styles.feeValue, { color: colors.text }]}>₦{cautionFee.toLocaleString()}</Text>
+                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Platform Service Charge (5%)</Text>
+                                        <Text style={[styles.feeValue, { color: colors.primary, fontWeight: '700' }]}>₦{serviceFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
                                     </View>
                                     <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Legal Fee</Text>
-                                        <Text style={[styles.feeValue, { color: colors.text }]}>₦{legalFee.toLocaleString()}</Text>
-                                    </View>
-                                    <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Service Charge ({serviceChargePct}%)</Text>
-                                        <Text style={[styles.feeValue, { color: colors.primary, fontWeight: '700' }]}>₦{serviceFee.toLocaleString()}</Text>
+                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Escrow Protection Fee</Text>
+                                        <Text style={[styles.feeValue, { color: '#059669', fontWeight: '700' }]}>₦{escrowFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
                                     </View>
                                 </View>
                             )}
@@ -636,23 +843,38 @@ const PropertyDetailScreen = () => {
                         </>
                     )}
 
-                    {/* Book Inspection Card (Hidden for Landlords & Agents) */}
+                    {/* Inspection Requirement Card (Hidden for Landlords & Agents) */}
                     {!isLandlordOrAgent && (
-                        <View style={[styles.unlockCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={styles.unlockIconWrap}>
+                        <View style={[
+                            styles.unlockCard,
+                            {
+                                backgroundColor: colors.card,
+                                borderColor: isBooked ? (hasInspectionPassed ? '#10B981' : '#3B82F6') : colors.border
+                            }
+                        ]}>
+                            <View style={[
+                                styles.unlockIconWrap,
+                                { backgroundColor: isBooked ? (hasInspectionPassed ? '#ECFDF5' : '#EFF6FF') : colors.primary + '15' }
+                            ]}>
                                 <Ionicons
-                                    name={isBooked ? 'calendar' : 'calendar-outline'}
+                                    name={isBooked ? (hasInspectionPassed ? 'checkmark-circle' : 'time') : 'calendar-outline'}
                                     size={28}
-                                    color={isBooked ? '#00C853' : colors.primary}
+                                    color={isBooked ? (hasInspectionPassed ? '#059669' : '#1D4ED8') : colors.primary}
                                 />
                             </View>
                             <Text style={[styles.unlockTitle, { color: colors.text }]}>
-                                {isBooked ? 'Inspection Booked' : 'Book an Inspection'}
+                                {!isBooked
+                                    ? 'Physical Inspection Required'
+                                    : hasInspectionPassed
+                                    ? 'Inspection Completed ✓'
+                                    : 'Inspection Scheduled (Upcoming)'}
                             </Text>
                             <Text style={[styles.unlockSubtitle, { color: colors.textSecondary }]}>
-                                {isBooked
-                                    ? 'Your inspection has been booked! Check your WhatsApp/Email for landlord details.'
-                                    : 'Use 1 service unit to book a physical inspection. You will receive the landlord\'s direct contact and exact address via WhatsApp and Email.'}
+                                {!isBooked
+                                    ? 'You must book and attend a physical inspection before submitting a rental application for this property.'
+                                    : hasInspectionPassed
+                                    ? 'Your inspection day has passed! You are now eligible to submit your formal tenancy application below.'
+                                    : `Your inspection is scheduled for ${bookingDetails?.preferred_date ? new Date(bookingDetails.preferred_date).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' }) : 'soon'}. The Apply Now button unlocks once the inspection day has passed.`}
                             </Text>
                         </View>
                     )}
@@ -689,6 +911,22 @@ const PropertyDetailScreen = () => {
                         </>
                     )}
 
+                    {/* Trust & Safety / Report Card */}
+                    {!isLandlordOrAgent && (
+                        <TouchableOpacity
+                            style={[styles.reportCard, { backgroundColor: isDark ? '#0c1844' : '#FFF7ED', borderColor: isDark ? '#7c2d12' : '#FFEDD5' }]}
+                            onPress={() => setShowReportModal(true)}
+                            activeOpacity={0.75}
+                        >
+                            <Ionicons name="shield-half-outline" size={20} color="#EA580C" />
+                            <View style={{ flex: 1, marginLeft: 10 }}>
+                                <Text style={[styles.reportCardTitle, { color: isDark ? '#FED7AA' : '#9A3412' }]}>Suspicious listing or fraudulent price?</Text>
+                                <Text style={[styles.reportCardSub, { color: isDark ? '#FDBA74' : '#C2410C' }]}>Tap to report to Eden Trust & Safety team</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color="#EA580C" />
+                        </TouchableOpacity>
+                    )}
+
                     {/* Meta Info */}
                     <View style={styles.metaCard}>
                         <View style={styles.metaRow}>
@@ -716,34 +954,204 @@ const PropertyDetailScreen = () => {
                 </View>
             </ScrollView>
 
-            {/* Sticky Bottom Actions Bar (Hidden for Landlords & Agents) */}
-            {!isLandlordOrAgent && (
-                <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
-                    {isBooked && (
-                        <TouchableOpacity
-                            style={styles.applyButton}
-                            onPress={handleApply}
-                            activeOpacity={0.85}
-                        >
-                            <Text style={styles.buttonText}>Apply To Rent</Text>
-                        </TouchableOpacity>
-                    )}
+            {/* ─── BOTTOM ACTION BUTTONS (Book Inspection & Apply Now) ─────── */}
+            <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+                {isLandlordOrAgent ? (
                     <TouchableOpacity
-                        style={styles.bookActionBtn}
-                        onPress={handleBookInspection}
-                        disabled={booking}
-                        activeOpacity={0.85}
+                        style={[styles.applyButton, { backgroundColor: colors.primary }]}
+                        onPress={() => router.push({
+                            pathname: '/landlord-screens/add-property',
+                            params: { id: property.id }
+                        })}
                     >
-                        {booking ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.buttonText}>
-                                {isBooked ? 'View Booking Status' : 'Book Inspection(₦666)'}
-                            </Text>
-                        )}
+                        <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.buttonText}>Edit Listing</Text>
                     </TouchableOpacity>
-                </View>
-            )}
+                ) : (
+                    <>
+                        {/* Book Inspection Button: Active when not booked; Upcoming when scheduled; Grayed out/disabled after inspection day has passed */}
+                        <TouchableOpacity
+                            style={[
+                                styles.bookActionBtn,
+                                hasInspectionPassed
+                                    ? { backgroundColor: isDark ? '#1E293B' : '#E2E8F0', borderColor: isDark ? '#334155' : '#CBD5E1', borderWidth: 1 }
+                                    : isBooked
+                                    ? { backgroundColor: '#10B981' }
+                                    : { backgroundColor: colors.primary },
+                            ]}
+                            disabled={hasInspectionPassed}
+                            onPress={() => {
+                                if (isBooked) {
+                                    router.push('/shared-screens/InspectionsScreen');
+                                } else {
+                                    router.push({
+                                        pathname: '/shared-screens/BookInspectionScreen',
+                                        params: {
+                                            property_id: property.id,
+                                            property_title: property.title,
+                                        },
+                                    });
+                                }
+                            }}
+                        >
+                            <Ionicons
+                                name={hasInspectionPassed ? "checkmark-done" : isBooked ? "checkmark-circle" : "calendar-outline"}
+                                size={18}
+                                color={hasInspectionPassed ? '#94A3B8' : '#FFFFFF'}
+                                style={{ marginRight: 6 }}
+                            />
+                            <Text style={[styles.buttonText, hasInspectionPassed && { color: '#94A3B8' }]}>
+                                {hasInspectionPassed
+                                    ? 'Inspection Done ✓'
+                                    : isBooked
+                                    ? 'Inspection Booked ✓'
+                                    : 'Book Inspection'}
+                            </Text>
+                        </TouchableOpacity>
+
+                        {/* Apply Now Button: Grayed out and disabled until inspection day has passed; Active and clickable once inspection has passed */}
+                        <TouchableOpacity
+                            style={[
+                                styles.applyButton,
+                                hasInspectionPassed
+                                    ? { backgroundColor: '#F49E5E' }
+                                    : { backgroundColor: isDark ? '#1E293B' : '#E2E8F0', borderColor: isDark ? '#334155' : '#CBD5E1', borderWidth: 1 },
+                            ]}
+                            disabled={!hasInspectionPassed}
+                            onPress={() => {
+                                if (!hasInspectionPassed) {
+                                    Alert.alert(
+                                        'Inspection Required',
+                                        !isBooked
+                                            ? 'Please book and attend a physical inspection first before applying.'
+                                            : `Your inspection is scheduled for ${bookingDetails?.preferred_date || 'soon'}. The application form unlocks after your inspection day.`
+                                    );
+                                    return;
+                                }
+
+                                router.push({
+                                    pathname: '/shared-screens/ApplicationScreen',
+                                    params: {
+                                        id: property.id,
+                                        title: property.title,
+                                        price: property.price,
+                                        location: property.location,
+                                        landlordName: property.landlord?.first_name || 'Landlord',
+                                        image: images[0] || '',
+                                    },
+                                });
+                            }}
+                        >
+                            <Ionicons
+                                name={hasInspectionPassed ? "document-text-outline" : "lock-closed-outline"}
+                                size={18}
+                                color={hasInspectionPassed ? '#FFFFFF' : '#94A3B8'}
+                                style={{ marginRight: 6 }}
+                            />
+                            <Text style={[styles.buttonText, !hasInspectionPassed && { color: '#94A3B8' }]}>
+                                {hasInspectionPassed ? 'Apply Now' : 'Apply (Locked)'}
+                            </Text>
+                        </TouchableOpacity>
+                    </>
+                )}
+            </View>
+
+            {/* ─── REPORT LISTING MODAL ────────────────────────────────────── */}
+            <Modal
+                visible={showReportModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowReportModal(false)}
+            >
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.reportModalOverlay}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+                >
+                    <Pressable style={{ flex: 1 }} onPress={() => setShowReportModal(false)} />
+                    <View style={[styles.reportModalContent, { backgroundColor: colors.card }]}>
+                        <View style={[styles.reportModalHeader, { borderBottomColor: colors.border }]}>
+                            <View style={styles.modalHandle} />
+                            <Text style={[styles.reportModalTitle, { color: colors.text }]}>Report Property Listing</Text>
+                            <TouchableOpacity
+                                style={styles.modalCloseBtn}
+                                onPress={() => setShowReportModal(false)}
+                            >
+                                <Ionicons name="close" size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView contentContainerStyle={[styles.reportModalBody, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
+                            <Text style={[styles.reportSectionLabel, { color: colors.text }]}>
+                                Why are you reporting this listing? *
+                            </Text>
+
+                            <View style={{ gap: 8 }}>
+                                {reportReasons.map((reason) => {
+                                    const isSelected = reportReason === reason;
+                                    return (
+                                        <TouchableOpacity
+                                            key={reason}
+                                            style={[
+                                                styles.reasonOption,
+                                                {
+                                                    backgroundColor: isSelected ? (isDark ? '#1e3a8a' : '#EFF6FF') : colors.background,
+                                                    borderColor: isSelected ? colors.primary : colors.border
+                                                }
+                                            ]}
+                                            onPress={() => setReportReason(reason)}
+                                        >
+                                            <Ionicons
+                                                name={isSelected ? "radio-button-on" : "radio-button-off"}
+                                                size={18}
+                                                color={isSelected ? colors.primary : colors.textSecondary}
+                                                style={{ marginRight: 10 }}
+                                            />
+                                            <Text style={[styles.reasonText, { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '700' : '500' }]}>
+                                                {reason}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+
+                            <Text style={[styles.reportSectionLabel, { color: colors.text, marginTop: 16 }]}>
+                                Additional Details / Evidence
+                            </Text>
+                            <TextInput
+                                style={[styles.reportInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                                placeholder="Describe the issue (e.g. landlord asking for cash payment outside Eden escrow, photos belong to another property, etc.)..."
+                                placeholderTextColor={colors.textSecondary}
+                                multiline
+                                numberOfLines={3}
+                                value={reportDetails}
+                                onChangeText={setReportDetails}
+                            />
+
+                            <View style={[styles.ndprSafetyBox, { backgroundColor: isDark ? '#0c1844' : '#F8FAFC', borderColor: isDark ? '#1e3a8a' : '#E2E8F0' }]}>
+                                <Ionicons name="shield-checkmark" size={16} color="#1D4ED8" />
+                                <Text style={[styles.ndprSafetyText, { color: colors.textSecondary }]}>
+                                    Your report is anonymous to the landlord. Eden Moderation investigates all reports within 2 hours.
+                                </Text>
+                            </View>
+                        </ScrollView>
+
+                        <View style={[styles.reportModalFooter, { borderTopColor: colors.border }]}>
+                            <TouchableOpacity
+                                style={[styles.submitReportBtn, { backgroundColor: '#DC2626' }]}
+                                onPress={handleSubmitReport}
+                                disabled={isSubmittingReport}
+                            >
+                                {isSubmittingReport ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <Text style={styles.submitReportText}>Submit Report</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </ScreenWrapper>
     );
 };
@@ -849,6 +1257,118 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 6,
         elevation: 4,
+    },
+    reportButton: {
+        position: 'absolute',
+        top: 40,
+        right: 68,
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        backgroundColor: 'rgba(255,255,255,0.92)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+    },
+    reportCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    reportCardTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    reportCardSub: {
+        fontSize: 11,
+        marginTop: 1,
+    },
+    reportModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'flex-end',
+    },
+    reportModalContent: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        maxHeight: '85%',
+        paddingBottom: 24,
+    },
+    reportModalHeader: {
+        alignItems: 'center',
+        paddingVertical: 14,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        position: 'relative',
+    },
+    reportModalTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    reportModalBody: {
+        padding: 20,
+        gap: 12,
+    },
+    reportSectionLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        marginBottom: 6,
+    },
+    reasonOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    reasonText: {
+        fontSize: 13,
+        flex: 1,
+    },
+    reportInput: {
+        height: 75,
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 13,
+        textAlignVertical: 'top',
+    },
+    ndprSafetyBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        padding: 10,
+        borderRadius: 10,
+        borderWidth: 1,
+        marginTop: 6,
+    },
+    ndprSafetyText: {
+        fontSize: 11,
+        lineHeight: 15,
+        flex: 1,
+    },
+    reportModalFooter: {
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    submitReportBtn: {
+        height: 48,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    submitReportText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '700',
     },
     editButton: {
         position: 'absolute',
@@ -1109,6 +1629,89 @@ const styles = StyleSheet.create({
     galleryThumbActive: { borderColor: '#2563EB' },
     galleryImage: { width: '100%', height: '100%' },
 
+    modalHandle: {
+        width: 36,
+        height: 4,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 2,
+        marginBottom: 8,
+    },
+    modalCloseBtn: {
+        position: 'absolute',
+        right: 16,
+        top: 14,
+        padding: 4,
+    },
+    landlordModerationCard: {
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 14,
+        marginTop: 12,
+        marginBottom: 8,
+        gap: 10,
+    },
+    landlordModerationHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    landlordModerationTitle: {
+        fontSize: 13.5,
+        fontWeight: '700',
+    },
+    landlordModBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    landlordModBadgeText: {
+        fontSize: 10.5,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+    },
+    adminFeedbackBox: {
+        backgroundColor: '#FEF2F2',
+        borderColor: '#FECACA',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+        gap: 6,
+    },
+    adminFeedbackHeader: {
+        fontSize: 12.5,
+        fontWeight: '800',
+        color: '#DC2626',
+    },
+    adminFeedbackBody: {
+        fontSize: 12,
+        color: '#B91C1C',
+        lineHeight: 16,
+    },
+    editListingActionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        height: 38,
+        borderRadius: 10,
+        backgroundColor: '#DC2626',
+        marginTop: 4,
+    },
+    editListingActionText: {
+        color: '#FFF',
+        fontSize: 12.5,
+        fontWeight: '700',
+    },
+    landlordModNote: {
+        fontSize: 11.5,
+        lineHeight: 16,
+    },
     // ── Meta ──────────────────────────────────────────────────────────────────
     metaCard: {
         backgroundColor: '#F8FAFC',

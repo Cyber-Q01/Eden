@@ -4,6 +4,8 @@ import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import {
     ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -252,15 +254,21 @@ const AddPropertyScreen = () => {
             {/* Segmented Step indicator */}
             {renderSegmentedProgress()}
 
-            {/* Form content */}
-            <ScrollView
+            {/* Form content with KeyboardAvoidingView */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
             >
-                {renderStep()}
-            </ScrollView>
+                <ScrollView
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {renderStep()}
+                </ScrollView>
+            </KeyboardAvoidingView>
 
             {/* Footer navigation */}
             <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>

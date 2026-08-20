@@ -1,6 +1,15 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import BackButton from '../../components/BackButton';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
@@ -46,49 +55,55 @@ const ResetPasswordScreen = () => {
     };
 
     return (
-        <ScreenWrapper style={styles.container}>
+        <ScreenWrapper style={styles.container} withScrollView={true}>
             <View style={styles.header}>
                 <BackButton />
             </View>
 
-            <View style={styles.content}>
-                <View style={styles.topSection}>
-                    <Image
-                        source={require('../../assets/images/EdenIcon.png')}
-                        style={styles.icon}
-                        resizeMode="contain"
-                    />
-                    <Text style={[styles.title, { color: colors.primary }]}>Reset Your Password</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                        Enter the email address associated with your account and we'll send you a verification code.
-                    </Text>
-                </View>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={styles.topSection}>
+                        <Image
+                            source={require('../../assets/images/EdenIcon.png')}
+                            style={styles.icon}
+                            resizeMode="contain"
+                        />
+                        <Text style={[styles.title, { color: colors.primary }]}>Reset Your Password</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                            Enter the email address associated with your account and we'll send you a verification code.
+                        </Text>
+                    </View>
 
-                <View style={styles.formContainer}>
-                    <ThemedTextInput
-                        placeholder="Email address"
-                        value={email}
-                        onChangeText={setEmail}
-                        autoCapitalize="none"
-                        keyboardType="email-address"
-                    />
-
-                    <View style={styles.buttonGroup}>
-                        <CustomButton
-                            title={loading ? "Sending..." : "Send Code"}
-                            onPress={handleSendCode}
-                            disabled={loading}
+                    <View style={styles.formContainer}>
+                        <ThemedTextInput
+                            placeholder="Email address"
+                            value={email}
+                            onChangeText={setEmail}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
                         />
 
-                        <TouchableOpacity
-                            style={[styles.backToLoginButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-                            onPress={() => router.back()}
-                        >
-                            <Text style={[styles.backToLoginText, { color: colors.primary }]}>Back to Login</Text>
-                        </TouchableOpacity>
+                        <View style={styles.buttonGroup}>
+                            <CustomButton
+                                title={loading ? "Sending..." : "Send Code"}
+                                onPress={handleSendCode}
+                                disabled={loading}
+                            />
+
+                            <TouchableOpacity
+                                style={[styles.backToLoginButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                onPress={() => router.back()}
+                            >
+                                <Text style={[styles.backToLoginText, { color: colors.primary }]}>Back to Login</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };

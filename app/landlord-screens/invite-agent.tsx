@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Share, Image } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Share, Image, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -22,10 +22,21 @@ const InviteAgentScreen = () => {
     const handleShare = async () => {
         try {
             await Share.share({
-                message: `Hey! I'm inviting you to be an agent for my properties on Eden Home. Use this invite code to link your account: ${code}\n\nDownload the app and select "I'm an Agent" during signup.`,
+                message: `Hello! I am inviting you to manage properties as an Agent on Eden. Use this 6-character Invite Code to link your account: ${code}\n\nDownload Eden and select "Link Your Account as Agent" in your profile.`,
             });
         } catch (error) {
             console.error(error);
+        }
+    };
+
+    const handleWhatsAppShare = async () => {
+        const text = `Hello! I am inviting you to manage properties as an Agent on Eden. Use this 6-character Invite Code to link your account: ${code}\n\nDownload Eden, select "Link Your Account as Agent" or enter this code in your profile.`;
+        const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+            await Linking.openURL(url);
+        } else {
+            handleShare();
         }
     };
 
@@ -61,6 +72,15 @@ const InviteAgentScreen = () => {
                 </TouchableOpacity>
 
                 <View style={styles.buttonContainer}>
+                    <TouchableOpacity
+                        style={styles.whatsAppShareBtn}
+                        onPress={handleWhatsAppShare}
+                        activeOpacity={0.8}
+                    >
+                        <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
+                        <Text style={styles.whatsAppShareBtnText}>Share via WhatsApp</Text>
+                    </TouchableOpacity>
+
                     <CustomButton
                         title="Share Invite Code"
                         onPress={handleShare}
@@ -167,6 +187,26 @@ const styles = StyleSheet.create({
     },
     shareButton: {
         width: '100%',
+    },
+    whatsAppShareBtn: {
+        width: '100%',
+        height: 52,
+        borderRadius: 14,
+        backgroundColor: '#16A34A',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        shadowColor: '#16A34A',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
+        elevation: 3,
+    },
+    whatsAppShareBtnText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '700',
     },
     doneButton: {
         alignItems: 'center',

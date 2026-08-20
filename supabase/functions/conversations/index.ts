@@ -66,8 +66,8 @@ Deno.serve(async (req) => {
           .from('conversations')
           .select(`
             *,
-            participant_a:users!participant_a_id(id, first_name, last_name, email, user_biodata(profile_photo)),
-            participant_b:users!participant_b_id(id, first_name, last_name, email, user_biodata(profile_photo))
+            participant_a:users!participant_a_id(id, first_name, last_name, email, user_biodata!user_biodata_id_fkey(profile_photo)),
+            participant_b:users!participant_b_id(id, first_name, last_name, email, user_biodata!user_biodata_id_fkey(profile_photo))
           `)
           .eq('id', conversationId)
           .single();
@@ -86,8 +86,8 @@ Deno.serve(async (req) => {
         .from('conversations')
         .select(`
           *,
-          participant_a:users!participant_a_id(id, first_name, last_name, email, user_biodata(profile_photo)),
-          participant_b:users!participant_b_id(id, first_name, last_name, email, user_biodata(profile_photo))
+          participant_a:users!participant_a_id(id, first_name, last_name, email, user_biodata!user_biodata_id_fkey(profile_photo)),
+          participant_b:users!participant_b_id(id, first_name, last_name, email, user_biodata!user_biodata_id_fkey(profile_photo))
         `)
         .or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`)
         .order('last_message_at', { ascending: false });

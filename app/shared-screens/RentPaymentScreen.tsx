@@ -141,7 +141,7 @@ const RentPaymentScreen = () => {
     return (
         <ScreenWrapper
             disableKeyboardAvoidingView
-            withScrollView={false}
+            withScrollView={true}
             style={{ backgroundColor: colors.background }}
         >
             {/* Header */}

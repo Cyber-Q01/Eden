@@ -50,18 +50,23 @@ Deno.serve(async (req) => {
 
     // ── GET: Fetch profile with biodata ────────────────────────────────────
     if (req.method === 'GET') {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*, user_biodata(*)')
-        .eq('id', userId)
-        .single();
+      const [userRes, biodataRes] = await Promise.all([
+        supabase.from('users').select('*').eq('id', userId).maybeSingle(),
+        supabase.from('user_biodata').select('*').eq('id', userId).maybeSingle()
+      ]);
 
-      if (error) return errorResponse(error.message, 500);
+      if (userRes.error) return errorResponse(userRes.error.message, 500);
+      if (!userRes.data) return errorResponse('User not found', 404);
+
+      const biodata = biodataRes.data ?? null;
 
       // Flatten profile_photo from user_biodata for convenience
       const profile = {
-        ...data,
-        profile_photo: data?.user_biodata?.profile_photo ?? null,
+        ...userRes.data,
+        user_biodata: biodata,
+        profile_photo: biodata?.profile_photo ?? userRes.data?.user_metadata?.avatar_url ?? null,
+        phone: biodata?.phone_number ?? null,
+        gender: biodata?.gender ?? null,
       };
 
       return jsonResponse(profile);

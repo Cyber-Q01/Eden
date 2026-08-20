@@ -1,7 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+    ActivityIndicator,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
@@ -75,8 +85,13 @@ const LoginScreen = () => {
     // };
 
     return (
-        <ScreenWrapper withScrollView={false}>
-            <View style={styles.container}>
+        <ScreenWrapper withScrollView={true}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.topSection}>
                     <Image
                         source={require('../../assets/images/EdenIcon.png')}
@@ -147,7 +162,8 @@ const LoginScreen = () => {
                         </TouchableOpacity>
                     </View>
                 </View>
-            </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };

@@ -218,8 +218,7 @@ const PaymentDetailsScreen = () => {
     const copyReference = async () => {
         if (!payment) return;
         try {
-
-            await Clipboard.setStringAsync(payment.paystack_reference);
+            await Clipboard.setStringAsync(payment.paystack_reference || payment.id || '');
             showSuccess('Reference copied!');
         } catch (e) {
             console.error('Copy failed:', e);
@@ -336,7 +335,7 @@ const PaymentDetailsScreen = () => {
     if (!payment_id) {
         return (
             <ScreenWrapper
-                withScrollView={false}
+                withScrollView={true}
                 style={[styles.container, { backgroundColor: colors.background }]}
             >
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>

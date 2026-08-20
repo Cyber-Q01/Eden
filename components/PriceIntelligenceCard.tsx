@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useTheme } from '../../context/ThemeContext';
-import { callEdgeFunction } from '../../lib/api';
+import { useTheme } from '../context/ThemeContext';
+import { callEdgeFunction } from '../lib/api';
 
 type PriceAnalysis = {
     verdict: 'fair' | 'above_average' | 'below_average' | 'suspicious';
@@ -42,7 +42,7 @@ const PriceIntelligenceCard = ({ propertyId, propertyPrice }: Props) => {
         setLoading(true);
         try {
             // Try to get cached analysis first from the DB via properties endpoint
-            const data = await callEdgeFunction<PriceAnalysis>(
+            const data = await callEdgeFunction<any>(
                 'analyse-property-price',
                 'POST',
                 { property_id: propertyId }

@@ -135,7 +135,7 @@ WITNESSES:
     ];
 
     return (
-        <ScreenWrapper withScrollView={false} style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenWrapper withScrollView={true} style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <BackButton />
@@ -227,7 +227,7 @@ WITNESSES:
                 {showTips && (
                     <View style={[styles.collapsibleTips, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
                         <View style={styles.tipsHeader}>
-                            <Ionicons name="lightbulb-outline" size={16} color={colors.primary} />
+                            <Ionicons name="bulb-outline" size={16} color={colors.primary} />
                             <Text style={[styles.tipsTitle, { color: colors.primary }]}>Writing Tips</Text>
                             <TouchableOpacity onPress={() => setShowTips(false)}>
                                 <Ionicons name="close" size={16} color={colors.primary} />

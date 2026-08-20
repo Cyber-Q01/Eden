@@ -49,7 +49,7 @@ export const useInspections = () => {
                         renter:users!renter_id(
                             first_name, 
                             last_name, 
-                            user_biodata(profile_photo)
+                            user_biodata!user_biodata_id_fkey(profile_photo)
                         )
                     `)
                     .order('created_at', { ascending: false });

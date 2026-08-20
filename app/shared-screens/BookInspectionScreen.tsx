@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
+    KeyboardAvoidingView,
     Platform,
     ScrollView,
     StyleSheet,
@@ -195,13 +196,18 @@ const BookInspectionScreen = () => {
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                <View style={styles.infoCard}>
-                    <Text style={[styles.propertyTitle, { color: colors.text }]}>{property_title}</Text>
-                    <View style={styles.balanceBadge}>
-                        <Text style={styles.balanceLabel}>Your Balance: {credits} Units</Text>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={styles.infoCard}>
+                        <Text style={[styles.propertyTitle, { color: colors.text }]}>{property_title}</Text>
+                        <View style={styles.balanceBadge}>
+                            <Text style={styles.balanceLabel}>Your Balance: {credits} Units</Text>
+                        </View>
                     </View>
-                </View>
 
                 <View style={[styles.costCard, { backgroundColor: colors.primary + '10' }]}>
                     <Text style={[styles.costText, { color: colors.primary }]}>Booking Cost: 1 Unit</Text>
@@ -285,7 +291,8 @@ const BookInspectionScreen = () => {
                 </View>
 
                 <View style={{ height: 40 }} />
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
 
             <View style={[styles.footer, { borderTopColor: colors.border }]}>
                 <CustomButton

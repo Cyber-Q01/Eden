@@ -7,7 +7,9 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -263,115 +265,121 @@ const AgreementScreen = () => {
                     animationType="slide"
                     presentationStyle="pageSheet"
                 >
-                    <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-                        {/* Modal Header */}
-                        <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-                            <TouchableOpacity onPress={() => setShowClausesModal(false)}>
-                                <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
-                            </TouchableOpacity>
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>Customize Agreement</Text>
-                            <TouchableOpacity onPress={generateWithCustomClauses}>
-                                <Text style={[styles.generateText, { color: colors.primary }]}>Generate</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-                            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-                                Add custom clauses and terms to personalize your agreement
-                            </Text>
-
-                            {/* Deposit Amount */}
-                            <View style={styles.inputGroup}>
-                                <Text style={[styles.inputLabel, { color: colors.text }]}>Security Deposit Amount</Text>
-                                <TextInput
-                                    style={[styles.textInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
-                                    placeholder="e.g., 50% of annual rent"
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={depositAmount}
-                                    onChangeText={setDepositAmount}
-                                />
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        style={{ flex: 1 }}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+                    >
+                        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+                            {/* Modal Header */}
+                            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                                <TouchableOpacity onPress={() => setShowClausesModal(false)}>
+                                    <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                                </TouchableOpacity>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>Customize Agreement</Text>
+                                <TouchableOpacity onPress={generateWithCustomClauses}>
+                                    <Text style={[styles.generateText, { color: colors.primary }]}>Generate</Text>
+                                </TouchableOpacity>
                             </View>
 
-                            {/* Pet Policy */}
-                            <View style={styles.inputGroup}>
-                                <Text style={[styles.inputLabel, { color: colors.text }]}>Pet Policy</Text>
-                                <TextInput
-                                    style={[styles.textInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
-                                    placeholder="e.g., No pets allowed / Small pets allowed with deposit"
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={petPolicy}
-                                    onChangeText={setPetPolicy}
-                                />
-                            </View>
+                            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                                <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                                    Add custom clauses and terms to personalize your agreement
+                                </Text>
 
-                            {/* Maintenance Terms */}
-                            <View style={styles.inputGroup}>
-                                <Text style={[styles.inputLabel, { color: colors.text }]}>Maintenance Responsibilities</Text>
-                                <TextInput
-                                    style={[styles.textAreaInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
-                                    placeholder="Specify who handles repairs, maintenance requests, etc."
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={maintenanceTerms}
-                                    onChangeText={setMaintenanceTerms}
-                                    multiline
-                                    numberOfLines={3}
-                                />
-                            </View>
-
-                            {/* Additional Rules */}
-                            <View style={styles.inputGroup}>
-                                <Text style={[styles.inputLabel, { color: colors.text }]}>Additional Rules</Text>
-                                <TextInput
-                                    style={[styles.textAreaInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
-                                    placeholder="Any other specific rules or requirements"
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={additionalRules}
-                                    onChangeText={setAdditionalRules}
-                                    multiline
-                                    numberOfLines={3}
-                                />
-                            </View>
-
-                            {/* Custom Clauses */}
-                            <View style={styles.inputGroup}>
-                                <View style={styles.labelRow}>
-                                    <Text style={[styles.inputLabel, { color: colors.text }]}>Custom Clauses</Text>
-                                    <TouchableOpacity onPress={addCustomClause} style={[styles.addBtn, { backgroundColor: colors.primary + '15' }]}>
-                                        <Ionicons name="add" size={16} color={colors.primary} />
-                                        <Text style={[styles.addBtnText, { color: colors.primary }]}>Add Clause</Text>
-                                    </TouchableOpacity>
+                                {/* Deposit Amount */}
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.inputLabel, { color: colors.text }]}>Security Deposit Amount</Text>
+                                    <TextInput
+                                        style={[styles.textInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
+                                        placeholder="e.g., 50% of annual rent"
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={depositAmount}
+                                        onChangeText={setDepositAmount}
+                                    />
                                 </View>
 
-                                {customClauses.map((clause, index) => (
-                                    <View key={index} style={styles.clauseRow}>
-                                        <TextInput
-                                            style={[styles.clauseInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
-                                            placeholder={`Custom clause ${index + 1}`}
-                                            placeholderTextColor={colors.textSecondary}
-                                            value={clause}
-                                            onChangeText={(text) => updateCustomClause(index, text)}
-                                            multiline
-                                        />
-                                        {customClauses.length > 1 && (
-                                            <TouchableOpacity
-                                                onPress={() => removeCustomClause(index)}
-                                                style={[styles.removeBtn, { backgroundColor: '#ef444415' }]}
-                                            >
-                                                <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                                            </TouchableOpacity>
-                                        )}
+                                {/* Pet Policy */}
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.inputLabel, { color: colors.text }]}>Pet Policy</Text>
+                                    <TextInput
+                                        style={[styles.textInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
+                                        placeholder="e.g., No pets allowed / Small pets allowed with deposit"
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={petPolicy}
+                                        onChangeText={setPetPolicy}
+                                    />
+                                </View>
+
+                                {/* Maintenance Terms */}
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.inputLabel, { color: colors.text }]}>Maintenance Responsibilities</Text>
+                                    <TextInput
+                                        style={[styles.textAreaInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
+                                        placeholder="Specify who handles repairs, maintenance requests, etc."
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={maintenanceTerms}
+                                        onChangeText={setMaintenanceTerms}
+                                        multiline
+                                        numberOfLines={3}
+                                    />
+                                </View>
+
+                                {/* Additional Rules */}
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.inputLabel, { color: colors.text }]}>Additional Rules</Text>
+                                    <TextInput
+                                        style={[styles.textAreaInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
+                                        placeholder="Any other specific rules or requirements"
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={additionalRules}
+                                        onChangeText={setAdditionalRules}
+                                        multiline
+                                        numberOfLines={3}
+                                    />
+                                </View>
+
+                                {/* Custom Clauses */}
+                                <View style={styles.inputGroup}>
+                                    <View style={styles.labelRow}>
+                                        <Text style={[styles.inputLabel, { color: colors.text }]}>Custom Clauses</Text>
+                                        <TouchableOpacity onPress={addCustomClause} style={[styles.addBtn, { backgroundColor: colors.primary + '15' }]}>
+                                            <Ionicons name="add" size={16} color={colors.primary} />
+                                            <Text style={[styles.addBtnText, { color: colors.primary }]}>Add Clause</Text>
+                                        </TouchableOpacity>
                                     </View>
-                                ))}
-                            </View>
-                        </ScrollView>
-                    </View>
+
+                                    {customClauses.map((clause, index) => (
+                                        <View key={index} style={styles.clauseRow}>
+                                            <TextInput
+                                                style={[styles.clauseInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.text }]}
+                                                placeholder={`Custom clause ${index + 1}`}
+                                                placeholderTextColor={colors.textSecondary}
+                                                value={clause}
+                                                onChangeText={(text) => updateCustomClause(index, text)}
+                                                multiline
+                                            />
+                                            {customClauses.length > 1 && (
+                                                <TouchableOpacity
+                                                    onPress={() => removeCustomClause(index)}
+                                                    style={[styles.removeBtn, { backgroundColor: '#ef444415' }]}
+                                                >
+                                                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    ))}
+                                </View>
+                            </ScrollView>
+                        </View>
+                    </KeyboardAvoidingView>
                 </Modal>
             </ScreenWrapper>
         );
     }
 
     return (
-        <ScreenWrapper withScrollView={false} style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenWrapper withScrollView={true} style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <BackButton />

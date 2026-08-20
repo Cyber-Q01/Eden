@@ -6,6 +6,8 @@ import React, { useState } from 'react';
 import {
     ActivityIndicator,
     Image,
+    KeyboardAvoidingView,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -83,7 +85,12 @@ const ComplaintRequestScreen = () => {
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
                 {/* Category Grid */}
                 <View style={styles.gridContainer}>
@@ -137,7 +144,8 @@ const ComplaintRequestScreen = () => {
                 </TouchableOpacity>
 
             </ScrollView>
-        </ScreenWrapper>
+        </KeyboardAvoidingView>
+    </ScreenWrapper>
     );
 };
 

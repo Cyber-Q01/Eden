@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Image, Platform, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BiodataGuard from '@/components/BiodataGuard';
 import RoleGuard from '@/components/RoleGuard';
@@ -66,23 +67,17 @@ export default function LandlordLayout() {
                         ),
                     }}
                 />
-                {role !== 'AGENT' && (
-                    <Tabs.Screen
-                        name="chat"
-                        options={{
-                            title: 'Chat',
-                            tabBarIcon: ({ color }) => (
-                                <View style={styles.iconContainer}>
-                                    <Image
-                                        source={require('../../assets/icon/tab/chat.png')}
-                                        style={[styles.icon, { tintColor: color }]}
-                                        resizeMode="contain"
-                                    />
-                                </View>
-                            ),
-                        }}
-                    />
-                )}
+                <Tabs.Screen
+                    name="requests"
+                    options={{
+                        title: 'Requests',
+                        tabBarIcon: ({ color }) => (
+                            <View style={styles.iconContainer}>
+                                <Ionicons name="document-text-outline" size={22} color={color} />
+                            </View>
+                        ),
+                    }}
+                />
                 <Tabs.Screen
                     name="profile"
                     options={{

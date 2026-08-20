@@ -34,7 +34,7 @@ const ApplicationSentScreen = () => {
     };
 
     return (
-        <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]} withScrollView={false}>
+        <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]} withScrollView={true}>
             {/* Header */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <View style={{ width: 40 }} />

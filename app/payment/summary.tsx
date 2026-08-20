@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import BackButton from '../../components/BackButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 
 const EscrowPaymentSummary = () => {
     const router = useRouter();
 
     return (
-        <ScreenWrapper>
+        <ScreenWrapper withScrollView={true}>
             <View style={styles.container}>
                 <View style={styles.header}>
                     <BackButton />
@@ -19,16 +20,20 @@ const EscrowPaymentSummary = () => {
                 <View style={styles.amountBox}>
                     <View style={styles.row}>
                         <Text style={styles.label}>Rent Amount</Text>
-                        <Text style={styles.value}>N450,000</Text>
+                        <Text style={styles.value}>₦450,000.00</Text>
                     </View>
                     <View style={styles.row}>
-                        <Text style={styles.label}>Escrow Fee (20%)</Text>
-                        <Text style={styles.value}>N9,000</Text>
+                        <Text style={styles.label}>Platform Service Charge (5%)</Text>
+                        <Text style={styles.value}>₦22,500.00</Text>
+                    </View>
+                    <View style={styles.row}>
+                        <Text style={styles.label}>Escrow Protection Fee</Text>
+                        <Text style={styles.value}>₦1,000.00</Text>
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.row}>
                         <Text style={styles.totalLabel}>Total Payable</Text>
-                        <Text style={styles.totalValue}>N459,000</Text>
+                        <Text style={styles.totalValue}>₦473,500.00</Text>
                     </View>
                 </View>
 

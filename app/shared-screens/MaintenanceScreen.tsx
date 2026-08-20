@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
-import { useRequests } from '../../hooks/useRequests';
+import { useRequests, MaintenanceItem } from '../../hooks/useRequests';
 
 type MaintenanceStatus = 'all' | 'pending' | 'in_progress' | 'resolved' | 'closed';
 
@@ -20,34 +20,37 @@ const MaintenanceScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
     const { fetchMaintenanceRequests, loading } = useRequests();
-    const [requests, setRequests] = useState<any[]>([]);
-    const [filteredRequests, setFilteredRequests] = useState<any[]>([]);
+    const [requests, setRequests] = useState<MaintenanceItem[]>([]);
+    const [filteredRequests, setFilteredRequests] = useState<MaintenanceItem[]>([]);
     const [activeFilter, setActiveFilter] = useState<MaintenanceStatus>('all');
     const [refreshing, setRefreshing] = useState(false);
 
-    const loadRequests = async () => {
-        const data = await fetchMaintenanceRequests();
-        setRequests(data);
-        applyFilter(activeFilter, data);
-    };
-
-    useEffect(() => {
-        loadRequests();
-    }, []);
-
-    const onRefresh = async () => {
-        setRefreshing(true);
-        await loadRequests();
-        setRefreshing(false);
-    };
-
-    const applyFilter = (filter: MaintenanceStatus, data: any[] = requests) => {
+    const applyFilter = useCallback((filter: MaintenanceStatus, data: MaintenanceItem[] = requests) => {
         setActiveFilter(filter);
         if (filter === 'all') {
             setFilteredRequests(data);
         } else {
             setFilteredRequests(data.filter(r => r.status === filter));
         }
+    }, [requests]);
+
+    const loadRequests = useCallback(async () => {
+        const data = await fetchMaintenanceRequests();
+        setRequests(data);
+        applyFilter(activeFilter, data);
+    }, [fetchMaintenanceRequests, activeFilter, applyFilter]);
+
+    // Refetch whenever screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            loadRequests();
+        }, [loadRequests])
+    );
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await loadRequests();
+        setRefreshing(false);
     };
 
     const getStatusColor = (status: string) => {
@@ -70,7 +73,7 @@ const MaintenanceScreen = () => {
     };
 
     const renderHeader = () => (
-        <View style={[styles.header, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
             </TouchableOpacity>
@@ -79,7 +82,8 @@ const MaintenanceScreen = () => {
                 style={[styles.newBtn, { backgroundColor: colors.primary }]}
                 onPress={() => router.push('/profile/maintenance-request')}
             >
-                <Text style={styles.newBtnText}>+New</Text>
+                <Ionicons name="add" size={16} color="#FFF" />
+                <Text style={styles.newBtnText}>New</Text>
             </TouchableOpacity>
         </View>
     );
@@ -87,7 +91,7 @@ const MaintenanceScreen = () => {
     const renderSummary = () => {
         const open = requests.filter(r => r.status === 'pending').length;
         const inProgress = requests.filter(r => r.status === 'in_progress').length;
-        const resolved = requests.filter(r => r.status === 'resolved').length;
+        const resolved = requests.filter(r => r.status === 'resolved' || r.status === 'closed').length;
 
         return (
             <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -113,7 +117,7 @@ const MaintenanceScreen = () => {
         <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={['all', 'pending', 'in_progress', 'resolved', 'closed']}
+            data={['all', 'pending', 'in_progress', 'resolved', 'closed'] as MaintenanceStatus[]}
             keyExtractor={(item) => item}
             contentContainerStyle={styles.filterList}
             renderItem={({ item }) => (
@@ -123,57 +127,79 @@ const MaintenanceScreen = () => {
                         { backgroundColor: colors.card, borderColor: colors.border },
                         activeFilter === item && { backgroundColor: colors.primary, borderColor: colors.primary }
                     ]}
-                    onPress={() => applyFilter(item as MaintenanceStatus)}
+                    onPress={() => applyFilter(item)}
                 >
                     <Text style={[
                         styles.filterTabText,
-                        { color: colors.textSecondary },
-                        activeFilter === item && { color: '#FFF' }
+                        { color: activeFilter === item ? '#FFF' : colors.textSecondary },
+                        activeFilter === item && { fontWeight: '700' }
                     ]}>
-                        {item === 'all' ? 'all' : getStatusLabel(item)}
+                        {item === 'all' ? 'All' : getStatusLabel(item)}
                     </Text>
                 </TouchableOpacity>
             )}
         />
     );
 
-    const renderRequest = ({ item }: { item: any }) => (
-        <TouchableOpacity
-            style={[styles.requestCard, { backgroundColor: colors.card, borderLeftColor: getStatusColor(item.status) }]}
-            activeOpacity={0.7}
-        >
-            <View style={styles.requestHeader}>
-                <Text style={[styles.requestId, { color: colors.textSecondary }]}>#MT-{String(item.id).padStart(3, '0')}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                        {getStatusLabel(item.status)}
+    const renderRequest = ({ item }: { item: MaintenanceItem }) => {
+        const propertyTitle = item.property_title || item.property?.title || 'Rented Property';
+
+        return (
+            <TouchableOpacity
+                style={[styles.requestCard, { backgroundColor: colors.card, borderLeftColor: getStatusColor(item.status), borderColor: colors.border }]}
+                activeOpacity={0.75}
+                onPress={() =>
+                    router.push({
+                        pathname: '/shared-screens/MaintenanceDetailsScreen',
+                        params: { id: item.id, requestData: JSON.stringify(item) },
+                    })
+                }
+            >
+                <View style={styles.requestHeader}>
+                    <Text style={[styles.requestId, { color: colors.textSecondary }]}>
+                        #MT-{String(item.id).slice(-4).toUpperCase()}
                     </Text>
-                </View>
-            </View>
-
-            <Text style={[styles.requestTitle, { color: colors.text }]} numberOfLines={1}>{item.description}</Text>
-
-            <View style={styles.requestFooter}>
-                <View style={styles.footerLeft}>
-                    <View style={styles.footerInfo}>
-                        <Ionicons name="home-outline" size={12} color={colors.textSecondary} />
-                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>2 Bed Flat, Lekki</Text>
-                    </View>
-                    <View style={styles.footerInfo}>
-                        <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-                            {new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+                        <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                            {getStatusLabel(item.status)}
                         </Text>
                     </View>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.border} />
-            </View>
 
-            <View style={[styles.categoryBadge, { backgroundColor: colors.primary + '10' }]}>
-                <Text style={[styles.categoryText, { color: colors.primary }]}>{item.category.charAt(0).toUpperCase() + item.category.slice(1)}</Text>
-            </View>
-        </TouchableOpacity>
-    );
+                <Text style={[styles.requestTitle, { color: colors.text }]} numberOfLines={1}>
+                    {item.title}
+                </Text>
+
+                <Text style={[styles.requestDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+                    {item.description}
+                </Text>
+
+                <View style={styles.requestFooter}>
+                    <View style={styles.footerLeft}>
+                        <View style={styles.footerInfo}>
+                            <Ionicons name="home-outline" size={13} color={colors.primary} />
+                            <Text style={[styles.footerText, { color: colors.text }]} numberOfLines={1}>
+                                {propertyTitle}
+                            </Text>
+                        </View>
+                        <View style={styles.footerInfo}>
+                            <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
+                            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+                                {new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </Text>
+                        </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+                </View>
+
+                <View style={[styles.categoryBadge, { backgroundColor: colors.primary + '12' }]}>
+                    <Text style={[styles.categoryText, { color: colors.primary }]}>
+                        {(item.category || 'General').charAt(0).toUpperCase() + (item.category || 'general').slice(1)}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
@@ -186,16 +212,40 @@ const MaintenanceScreen = () => {
                 contentContainerStyle={styles.listContent}
                 ListHeaderComponent={() => (
                     <View>
+                        {/* Need an Artisan Direct Trigger Banner */}
+                        <TouchableOpacity
+                            style={[styles.findArtisanBanner, { backgroundColor: colors.primary + '12', borderColor: colors.primary + '30' }]}
+                            onPress={() => router.push('/shared-screens/FindArtisanScreen')}
+                            activeOpacity={0.8}
+                        >
+                            <View style={[styles.artisanIconWrap, { backgroundColor: colors.primary }]}>
+                                <Ionicons name="construct" size={18} color="#FFF" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.findArtisanTitle, { color: colors.primary }]}>Need a Technician / Artisan?</Text>
+                                <Text style={[styles.findArtisanSub, { color: colors.textSecondary }]}>Browse Eden vetted plumbers, electricians, AC & carpenters</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                        </TouchableOpacity>
+
                         {renderSummary()}
                         {renderFilters()}
                     </View>
                 )}
                 ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
-                        {loading ? (
+                        {loading && requests.length === 0 ? (
                             <ActivityIndicator size="large" color={colors.primary} />
                         ) : (
-                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No maintenance requests found</Text>
+                            <>
+                                <Ionicons name="construct-outline" size={54} color={colors.border} />
+                                <Text style={[styles.emptyTitle, { color: colors.text }]}>No Maintenance Requests</Text>
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                    {activeFilter !== 'all'
+                                        ? `No ${getStatusLabel(activeFilter).toLowerCase()} requests found.`
+                                        : 'You have not submitted any maintenance requests yet.'}
+                                </Text>
+                            </>
                         )}
                     </View>
                 )}
@@ -224,16 +274,20 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 20,
         paddingTop: 15,
-        paddingBottom: 10,
+        paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     backBtn: {
         padding: 4,
     },
     headerTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '700',
     },
     newBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 10,
@@ -241,13 +295,38 @@ const styles = StyleSheet.create({
     newBtnText: {
         color: '#FFF',
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: '700',
+    },
+    findArtisanBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 20,
+        marginTop: 14,
+        padding: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        gap: 10,
+    },
+    artisanIconWrap: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    findArtisanTitle: {
+        fontSize: 13.5,
+        fontWeight: '700',
+    },
+    findArtisanSub: {
+        fontSize: 11,
+        marginTop: 2,
     },
     summaryCard: {
         flexDirection: 'row',
         marginHorizontal: 20,
-        marginTop: 15,
-        paddingVertical: 20,
+        marginTop: 14,
+        paddingVertical: 16,
         borderRadius: 20,
         borderWidth: 1,
         alignItems: 'center',
@@ -258,11 +337,12 @@ const styles = StyleSheet.create({
     },
     summaryValue: {
         fontSize: 22,
-        fontWeight: '700',
-        marginBottom: 4,
+        fontWeight: '800',
+        marginBottom: 2,
     },
     summaryLabel: {
-        fontSize: 12,
+        fontSize: 11.5,
+        fontWeight: '500',
     },
     summaryDivider: {
         width: 1,
@@ -270,69 +350,77 @@ const styles = StyleSheet.create({
     },
     filterList: {
         paddingHorizontal: 20,
-        marginTop: 20,
-        marginBottom: 15,
-        gap: 10,
+        marginTop: 16,
+        marginBottom: 12,
+        gap: 8,
     },
     filterTab: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 12,
         borderWidth: 1,
     },
     filterTabText: {
-        fontSize: 13,
-        fontWeight: '500',
+        fontSize: 12,
+        fontWeight: '600',
     },
     listContent: {
-        paddingBottom: 100,
+        paddingBottom: 110,
     },
     requestCard: {
         marginHorizontal: 20,
-        marginBottom: 16,
+        marginBottom: 14,
         padding: 16,
-        borderRadius: 20,
+        borderRadius: 18,
         borderLeftWidth: 4,
+        borderWidth: 1,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 10,
-        elevation: 3,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 2,
     },
     requestHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 6,
     },
     requestId: {
-        fontSize: 12,
-        fontWeight: '600',
+        fontSize: 11.5,
+        fontWeight: '700',
+        fontFamily: 'monospace',
     },
     statusBadge: {
-        paddingHorizontal: 12,
-        paddingVertical: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 3,
         borderRadius: 999,
     },
     statusText: {
-        fontSize: 12,
-        fontWeight: '600',
+        fontSize: 11,
+        fontWeight: '700',
     },
     requestTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 12,
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    requestDesc: {
+        fontSize: 12.5,
+        lineHeight: 17,
+        marginBottom: 10,
     },
     requestFooter: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 10,
+        marginTop: 4,
     },
     footerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 15,
+        gap: 12,
+        flex: 1,
     },
     footerInfo: {
         flexDirection: 'row',
@@ -340,32 +428,41 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     footerText: {
-        fontSize: 12,
+        fontSize: 11.5,
     },
     categoryBadge: {
         alignSelf: 'flex-start',
-        paddingHorizontal: 12,
-        paddingVertical: 4,
+        paddingHorizontal: 9,
+        paddingVertical: 3,
         borderRadius: 8,
+        marginTop: 8,
     },
     categoryText: {
-        fontSize: 10,
-        fontWeight: '600',
+        fontSize: 10.5,
+        fontWeight: '700',
     },
     emptyContainer: {
-        marginTop: 60,
+        marginTop: 40,
         alignItems: 'center',
+        paddingHorizontal: 20,
+        gap: 8,
+    },
+    emptyTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        marginTop: 4,
     },
     emptyText: {
-        fontSize: 14,
+        fontSize: 13,
+        textAlign: 'center',
     },
     bottomBar: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        padding: 20,
-        paddingBottom: 35,
+        padding: 16,
+        paddingBottom: 30,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.05,
@@ -374,17 +471,17 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
     },
     submitBtn: {
-        height: 56,
-        borderRadius: 18,
+        height: 52,
+        borderRadius: 16,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 10,
+        gap: 8,
     },
     submitBtnText: {
         color: '#FFF',
-        fontSize: 16,
-        fontWeight: '600',
+        fontSize: 15,
+        fontWeight: '700',
     },
 });
 

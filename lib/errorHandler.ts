@@ -1,7 +1,7 @@
 import NetInfo from '@react-native-community/netinfo';
 
 // ─── Error types ───────────────────────────────────────────────────────────────
-export type AppErrorType = 'no_internet' | 'network' | 'server' | 'auth' | 'unknown';
+export type AppErrorType = 'no_internet' | 'network' | 'server' | 'auth' | 'error' | 'validation' | 'unknown';
 
 export interface AppError {
     type: AppErrorType;
@@ -27,6 +27,14 @@ const ERROR_MAP: Record<AppErrorType, { title: string; message: string }> = {
     auth: {
         title: 'Authentication Error',
         message: 'Your session may have expired. Please sign in again.',
+    },
+    error: {
+        title: 'Action Error',
+        message: 'An error occurred while processing your request.',
+    },
+    validation: {
+        title: 'Validation Error',
+        message: 'Please check your inputs and try again.',
     },
     unknown: {
         title: 'Unexpected Error',

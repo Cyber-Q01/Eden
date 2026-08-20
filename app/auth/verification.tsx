@@ -1,6 +1,15 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useRef } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, TextInput } from 'react-native';
+import {
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+    TextInput,
+} from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
@@ -105,48 +114,54 @@ const VerificationScreen = () => {
     };
 
     return (
-        <ScreenWrapper style={styles.container}>
-            <View style={styles.content}>
-                <View style={styles.topSection}>
-                    <Text style={[styles.title, { color: colors.primary }]}>Enter Verification Code</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                        We just sent 6-digit code to{'\n'}
-                        <Text style={[styles.email, { color: colors.text }]}>{email}</Text>, enter it below:
-                    </Text>
-                </View>
-
-                <View style={styles.codeContainer}>
-                    {otp.map((digit, index) => (
-                        <ThemedTextInput
-                            key={index}
-                            containerStyle={styles.codeInputContainer}
-                            style={styles.codeInput}
-                            keyboardType="number-pad"
-                            maxLength={index === 0 ? 6 : 1} // Allow paste into first box
-                            value={digit}
-                            onChangeText={(text) => handleInputChange(text, index)}
-                            onKeyPress={(e) => handleKeyPress(e, index)}
-                            ref={(el: any) => inputRefs.current[index] = el}
-                            selectTextOnFocus={true}
-                        />
-                    ))}
-                </View>
-
-                <View style={styles.footer}>
-                    <CustomButton
-                        title={loading ? "Verifying..." : "Verify Code"}
-                        onPress={handleVerifyOtp}
-                        style={styles.verifyButton}
-                        disabled={loading}
-                    />
-
-                    <TouchableOpacity onPress={handleResend}>
-                        <Text style={[styles.resendText, { color: colors.textSecondary }]}>
-                            Didn't receive code ? <Text style={[styles.resendLink, { color: colors.primary }]}>Resend</Text>
+        <ScreenWrapper style={styles.container} withScrollView={true}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={styles.topSection}>
+                        <Text style={[styles.title, { color: colors.primary }]}>Enter Verification Code</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                            We just sent 6-digit code to{'\n'}
+                            <Text style={[styles.email, { color: colors.text }]}>{email}</Text>, enter it below:
                         </Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
+                    </View>
+
+                    <View style={styles.codeContainer}>
+                        {otp.map((digit, index) => (
+                            <ThemedTextInput
+                                key={index}
+                                containerStyle={styles.codeInputContainer}
+                                style={styles.codeInput}
+                                keyboardType="number-pad"
+                                maxLength={index === 0 ? 6 : 1} // Allow paste into first box
+                                value={digit}
+                                onChangeText={(text) => handleInputChange(text, index)}
+                                onKeyPress={(e) => handleKeyPress(e, index)}
+                                ref={(el: any) => inputRefs.current[index] = el}
+                                selectTextOnFocus={true}
+                            />
+                        ))}
+                    </View>
+
+                    <View style={styles.footer}>
+                        <CustomButton
+                            title={loading ? "Verifying..." : "Verify Code"}
+                            onPress={handleVerifyOtp}
+                            style={styles.verifyButton}
+                            disabled={loading}
+                        />
+
+                        <TouchableOpacity onPress={handleResend}>
+                            <Text style={[styles.resendText, { color: colors.textSecondary }]}>
+                                Didn't receive code ? <Text style={[styles.resendLink, { color: colors.primary }]}>Resend</Text>
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };

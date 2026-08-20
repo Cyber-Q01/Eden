@@ -66,7 +66,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 Promise.resolve(
                     supabase
                         .from('users')
-                        .select('completed_biodata, role')
+                        .select('completed_biodata, role, is_verified, is_nin_verified')
                         .eq('id', userId)
                         .single()
                 ),
@@ -75,7 +75,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (!error && data) {
                 const userRole = data.role ?? null;
-                const completed = data.completed_biodata ?? false;
+                const isNinVerified = Boolean(data.is_verified || data.is_nin_verified);
+                // Strict Protection: A user is only completed when both biodata AND NIN verification are satisfied
+                const completed = Boolean(data.completed_biodata && isNinVerified);
 
                 setCompletedBiodata(completed);
                 setRole(userRole);
@@ -174,8 +176,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     initializedRef.current = true;
                 }
             })
-            .catch(async (error) => {
-                console.error("Error getting session on mount (timed out or failed):", error);
+            .catch(async (error: any) => {
+                console.warn("Session check notice on startup:", error?.message || error);
+                const errorStr = (error?.message || String(error)).toLowerCase();
+
+                // Handle expired or invalid refresh token cleanly
+                if (errorStr.includes('refresh token') || errorStr.includes('invalid refresh')) {
+                    console.warn('[AuthContext] Invalid or expired refresh token, resetting session.');
+                    try {
+                        await supabase.auth.signOut();
+                        const keys = await AsyncStorage.getAllKeys();
+                        const authKeys = keys.filter(k => k.includes('auth-token') || k.includes('user_role'));
+                        if (authKeys.length > 0) await AsyncStorage.multiRemove(authKeys);
+                    } catch {}
+                    await handleSession(null);
+                    setLoading(false);
+                    initializedRef.current = true;
+                    return;
+                }
+
                 try {
                     // Try fallback to local storage session if getSession failed/timed out
                     const fallbackSession = await getPersistedSessionFallback();

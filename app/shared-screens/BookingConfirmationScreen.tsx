@@ -72,9 +72,11 @@ const BookingConfirmationScreen = () => {
                 if (propData) {
                     setProperty(propData.title);
                     setAddress(propData.location);
-                    const landlordName = propData.agent
-                        ? `${propData.agent.first_name || ''} ${propData.agent.last_name || ''}`.trim()
-                        : `${propData.landlord?.first_name || ''} ${propData.landlord?.last_name || ''}`.trim();
+                    const landlordObj: any = Array.isArray(propData.landlord) ? propData.landlord[0] : propData.landlord;
+                    const agentObj: any = Array.isArray(propData.agent) ? propData.agent[0] : propData.agent;
+                    const landlordName = agentObj
+                        ? `${agentObj.first_name || ''} ${agentObj.last_name || ''}`.trim()
+                        : `${landlordObj?.first_name || ''} ${landlordObj?.last_name || ''}`.trim();
                     setLandlord(landlordName || 'Landlord');
                 }
 
@@ -196,7 +198,7 @@ const BookingConfirmationScreen = () => {
 
     if (loading) {
         return (
-            <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]} withScrollView={false}>
+            <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]} withScrollView={true}>
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                     <ActivityIndicator size="large" color={colors.primary} />
                     <Text style={{ marginTop: 12, color: colors.textSecondary, fontSize: 14 }}>
@@ -208,7 +210,7 @@ const BookingConfirmationScreen = () => {
     }
 
     return (
-        <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]} withScrollView={false}>
+        <ScreenWrapper style={[styles.container, { backgroundColor: colors.background }]} withScrollView={true}>
             {/* Header */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <View style={{ width: 40 }} />

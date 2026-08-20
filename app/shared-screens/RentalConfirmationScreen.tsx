@@ -4,7 +4,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Animated,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -45,6 +47,7 @@ const RentalConfirmationScreen = () => {
     const [disputeReason, setDisputeReason] = useState('');
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
+    const [landlordId, setLandlordId] = useState<string | null>(null);
     const [landlordName, setLandlordName] = useState('Landlord');
     const [bankInfo, setBankInfo] = useState('Bank Transfer');
 
@@ -54,20 +57,23 @@ const RentalConfirmationScreen = () => {
             try {
                 const { data, error } = await supabase
                     .from('rentals')
-                    .select('owner:users!owner_id(first_name, last_name, bank_accounts(bank_name, account_number))')
+                    .select('owner_id, owner:users!owner_id(id, first_name, last_name, bank_accounts(bank_name, account_number))')
                     .eq('id', rental_id)
                     .single();
                 
-                if (data && data.owner) {
-                    const owner: any = data.owner;
-                    const name = `${owner.first_name || ''} ${owner.last_name || ''}`.trim();
-                    if (name) setLandlordName(name);
+                if (data) {
+                    if (data.owner_id) setLandlordId(data.owner_id);
+                    if (data.owner) {
+                        const owner: any = data.owner;
+                        const name = `${owner.first_name || ''} ${owner.last_name || ''}`.trim();
+                        if (name) setLandlordName(name);
 
-                    if (owner.bank_accounts) {
-                        const bank = Array.isArray(owner.bank_accounts) ? owner.bank_accounts[0] : owner.bank_accounts;
-                        if (bank) {
-                            const maskedAcc = bank.account_number ? `**** ${bank.account_number.slice(-4)}` : '';
-                            setBankInfo(`${bank.bank_name || 'Bank'} ${maskedAcc}`.trim());
+                        if (owner.bank_accounts) {
+                            const bank = Array.isArray(owner.bank_accounts) ? owner.bank_accounts[0] : owner.bank_accounts;
+                            if (bank) {
+                                const maskedAcc = bank.account_number ? `**** ${bank.account_number.slice(-4)}` : '';
+                                setBankInfo(`${bank.bank_name || 'Bank'} ${maskedAcc}`.trim());
+                            }
                         }
                     }
                 }
@@ -120,6 +126,8 @@ const RentalConfirmationScreen = () => {
                                 params: {
                                     amount: amount || '0',
                                     released_to: landlordName,
+                                    landlord_id: landlordId || '',
+                                    rental_id: rental_id || '',
                                     bank: bankInfo,
                                     release_time: new Date().toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) + ' • ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                                     reference: 'REL-' + Date.now(),
@@ -251,7 +259,11 @@ const RentalConfirmationScreen = () => {
                 animationType="slide"
                 onRequestClose={() => setShowDisputeModal(false)}
             >
-                <View style={styles.modalOverlay}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.modalOverlay}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+                >
                     <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
                         <View style={styles.modalHandle}>
                             <View style={[styles.handle, { backgroundColor: colors.border }]} />
@@ -288,7 +300,7 @@ const RentalConfirmationScreen = () => {
                             </TouchableOpacity>
                         </View>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </ScreenWrapper>
     );

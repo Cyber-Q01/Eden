@@ -5,7 +5,9 @@ import React, { useState, useEffect } from 'react';
 import {
     ActivityIndicator,
     Image,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -17,8 +19,10 @@ import {
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { useRequests } from '../../hooks/useRequests';
 import { useLeases } from '../../hooks/useLeases';
+import { supabase } from '../../lib/supabase';
 import { validateDescription, validateRequired, validateAll } from '../../lib/validation';
 
 type Priority = 'low' | 'medium' | 'high';
@@ -26,9 +30,9 @@ type Priority = 'low' | 'medium' | 'high';
 const MaintenanceRequestScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
+    const { user, role } = useAuth();
     const { showError } = useToast();
     const { submitMaintenanceRequest, loading } = useRequests();
-    const { leases, fetchLeases, loading: leasesLoading } = useLeases();
 
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [priority, setPriority] = useState<Priority>('medium');
@@ -36,15 +40,57 @@ const MaintenanceRequestScreen = () => {
     const [description, setDescription] = useState('');
     const [photos, setPhotos] = useState<(string | null)[]>([null, null, null]);
     const [selectedProperty, setSelectedProperty] = useState<any>(null);
+    const [propertyList, setPropertyList] = useState<any[]>([]);
     const [isSheetVisible, setIsSheetVisible] = useState(false);
 
     useEffect(() => {
-        fetchLeases().then(data => {
-            if (data && data.length > 0) {
-                setSelectedProperty(data[0]);
+        const loadUserProperties = async () => {
+            if (!user) return;
+            try {
+                if (role === 'LANDLORD' || role === 'AGENT') {
+                    // Landlord / Agent: fetch owned/managed properties
+                    const { data: props } = await supabase
+                        .from('properties')
+                        .select('id, title, location, images')
+                        .eq('landlord_id', user.id)
+                        .order('created_at', { ascending: false });
+
+                    if (props && props.length > 0) {
+                        const normalized = props.map((p: any) => ({
+                            id: p.id,
+                            title: p.title || 'Property',
+                            location: p.location || 'Lagos, Nigeria',
+                            property: p,
+                        }));
+                        setPropertyList(normalized);
+                        setSelectedProperty(normalized[0]);
+                    }
+                } else {
+                    // Tenant: fetch from rentals / leases
+                    const { data: rentals } = await supabase
+                        .from('rentals')
+                        .select('id, property:properties(id, title, location, images)')
+                        .eq('renter_id', user.id)
+                        .order('created_at', { ascending: false });
+
+                    if (rentals && rentals.length > 0) {
+                        const normalized = rentals.map((r: any) => ({
+                            id: r.property?.id || r.id,
+                            title: r.property?.title || 'Rented Property',
+                            location: r.property?.location || 'Lagos, Nigeria',
+                            property: r.property || r,
+                        }));
+                        setPropertyList(normalized);
+                        setSelectedProperty(normalized[0]);
+                    }
+                }
+            } catch (e) {
+                console.warn('Property fetch notice:', e);
             }
-        });
-    }, []);
+        };
+
+        loadUserProperties();
+    }, [user, role]);
 
     const categories = [
         { id: 'plumbing', name: 'Plumbing', icon: 'water-outline' },
@@ -84,11 +130,15 @@ const MaintenanceRequestScreen = () => {
             return;
         }
 
-        const { error } = await submitMaintenanceRequest(
-            selectedCategory!,
-            `[${priority.toUpperCase()}] ${title}: ${description} (${selectedProperty?.property?.title})`,
-            photos.filter(Boolean) as string[]
-        );
+        const { error } = await submitMaintenanceRequest({
+            propertyId: selectedProperty.id,
+            propertyTitle: selectedProperty.title || selectedProperty.property?.title || 'Property',
+            category: selectedCategory!,
+            title: title.trim(),
+            description: description.trim(),
+            priority: priority,
+            photoUris: photos.filter(Boolean) as string[],
+        });
 
         if (!error) {
             router.replace('/shared-screens/MaintenanceScreen');
@@ -122,10 +172,10 @@ const MaintenanceRequestScreen = () => {
                                 selectedProperty?.id === item.id && { color: colors.primary }
                             ]}
                         >
-                            {item.property?.title}
+                            {item.title || item.property?.title}
                         </Text>
                         <Text style={[styles.sheetItemSubtitle, { color: colors.textSecondary }]}>
-                            {item.property?.location}
+                            {item.location || item.property?.location}
                         </Text>
                     </View>
                 </View>
@@ -137,7 +187,7 @@ const MaintenanceRequestScreen = () => {
     };
 
     return (
-    <ScreenWrapper withScrollView={false} style={{ backgroundColor: colors.background }}>
+    <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
         <View style={[styles.header, { backgroundColor: colors.background }]}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -146,12 +196,17 @@ const MaintenanceRequestScreen = () => {
             <View style={{ width: 24 }} />
         </View>
 
-        <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+        <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
         >
-            {/* Property Selector */}
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
+                {/* Property Selector */}
             <Text style={[styles.label, { color: colors.text }]}>Property</Text>
             <TouchableOpacity
                 style={[styles.propertySelector, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -193,18 +248,6 @@ const MaintenanceRequestScreen = () => {
                     );
                 })}
             </View>
-
-            {/* Artisan Banner */}
-            <TouchableOpacity 
-                style={[styles.artisanBanner, { backgroundColor: colors.primary + '10', borderColor: colors.border }]}
-                onPress={() => router.push('/shared-screens/FindArtisanScreen')}
-            >
-                <View style={styles.artisanRow}>
-                    <Ionicons name="people-outline" size={18} color={colors.primary} />
-                    <Text style={[styles.artisanText, { color: colors.text }]}>Find a Verified Artisan</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-            </TouchableOpacity>
 
             {/* Priority Level */}
             <Text style={[styles.label, { color: colors.text }]}>Priority Level</Text>
@@ -276,6 +319,7 @@ const MaintenanceRequestScreen = () => {
                 ))}
             </View>
         </ScrollView>
+    </KeyboardAvoidingView>
 
         <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
             <TouchableOpacity
@@ -302,7 +346,7 @@ const MaintenanceRequestScreen = () => {
                     </View>
 
                     <FlatList
-                        data={leases}
+                        data={propertyList}
                         keyExtractor={(item) => item.id}
                         renderItem={renderPropertyItem}
                         contentContainerStyle={styles.sheetList}

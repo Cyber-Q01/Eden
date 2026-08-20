@@ -9,7 +9,9 @@ import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Image,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -148,14 +150,19 @@ const EditProfileScreen = () => {
     const displayAvatar = avatar ?? PLACEHOLDER_AVATAR;
 
     return (
-        <ScreenWrapper withScrollView={true} >
+        <ScreenWrapper withScrollView={true}>
             <View style={[styles.header, { backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
                 <BackButton />
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
                 {/* Avatar Section */}
                 <View style={styles.avatarContainer}>
@@ -227,6 +234,7 @@ const EditProfileScreen = () => {
                 </TouchableOpacity>
 
             </ScrollView>
+            </KeyboardAvoidingView>
 
             {/* Gender Selection Modal */}
             <Modal

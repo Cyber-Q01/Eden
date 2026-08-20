@@ -20,7 +20,7 @@ export async function callEdgeFunction<T = any>(
   functionName: string,
   method: HttpMethod = 'GET',
   body?: Record<string, any> | null,
-  params?: Record<string, string>,
+  params?: Record<string, any>,
   options?: ApiOptions,
 ): Promise<T> {
   // Build query string path if params provided
@@ -29,7 +29,11 @@ export async function callEdgeFunction<T = any>(
     const cleanParams: Record<string, string> = {};
     Object.entries(params).forEach(([key, val]) => {
       if (val !== undefined && val !== null && val !== '') {
-        cleanParams[key] = String(val);
+        if (Array.isArray(val)) {
+          cleanParams[key] = val.join(',');
+        } else {
+          cleanParams[key] = String(val);
+        }
       }
     });
     
@@ -45,7 +49,7 @@ export async function callEdgeFunction<T = any>(
   }
   // Race invoke against timeout
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT;
-  let timer: NodeJS.Timeout;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     console.log(`(api.ts) Invoking edge function: ${path}`);
@@ -65,7 +69,7 @@ export async function callEdgeFunction<T = any>(
 
     const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
 
-    clearTimeout(timer!);
+    if (timer) clearTimeout(timer);
 
     if (error) {
       let message = error.message;
@@ -99,7 +103,7 @@ export async function callEdgeFunction<T = any>(
 
     return data as T;
   } catch (error: any) {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     console.error('(api.ts) Error caught:', error);
 
     if (error.name === 'AbortError') {

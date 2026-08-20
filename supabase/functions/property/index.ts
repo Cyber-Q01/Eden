@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
           landlord:users!landlord_id (
             first_name,
             last_name,
-            biodata:user_biodata (
+            biodata:user_biodata!user_biodata_id_fkey (
               business_name,
               profile_photo
             )
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
           agent:users!agent_id (
             first_name,
             last_name,
-            biodata:user_biodata (
+            biodata:user_biodata!user_biodata_id_fkey (
               profile_photo
             )
           )

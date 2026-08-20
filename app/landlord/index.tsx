@@ -22,6 +22,13 @@ import { useProfile } from '../../hooks/useProfile';
 
 const { width } = Dimensions.get('window');
 
+const formatNaira = (amount: number | string | undefined | null): string => {
+    if (!amount && amount !== 0) return '₦0.00';
+    const num = typeof amount === 'string' ? parseFloat(amount.replace(/[^0-9.-]/g, '')) : Number(amount);
+    if (isNaN(num)) return '₦0.00';
+    return `₦${num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 const LandlordDashboard = () => {
     const router = useRouter();
     const { colors, isDark } = useTheme();
@@ -29,6 +36,10 @@ const LandlordDashboard = () => {
     const { stats, activeListings, applications, loading, error, refetch } = useLandlord();
     const { profile } = useProfile();
     const { unreadCount } = useNotifications();
+
+    const totalGenerated = stats?.totalCollected ?? 0;
+    const paidToAccount = stats?.amountPaid ?? 0;
+    const pendingInEden = stats?.amountPending ?? 0;
 
     const renderHeader = () => (
         <View style={styles.header}>
@@ -70,7 +81,7 @@ const LandlordDashboard = () => {
                         {isAgent ? 'Total Commissions' : 'Total Generated'}
                     </Text>
                     <Text style={styles.earningsAmount}>
-                        {isAgent ? (stats.earnings || '₦0') : `₦${(stats.totalCollected || 0).toLocaleString()}`}
+                        {isAgent ? (stats.earnings || '₦0.00') : formatNaira(totalGenerated)}
                     </Text>
                     <Text style={styles.earningsSubtext}>
                         {isAgent 
@@ -91,14 +102,14 @@ const LandlordDashboard = () => {
                         <View style={styles.breakdownItem}>
                             <Text style={styles.breakdownLabel}>Paid to Account</Text>
                             <Text style={styles.breakdownValue}>
-                                ₦{(stats.amountPaid || 0).toLocaleString()}
+                                {formatNaira(paidToAccount)}
                             </Text>
                         </View>
                         <View style={styles.breakdownDivider} />
                         <View style={styles.breakdownItem}>
                             <Text style={styles.breakdownLabel}>Pending (In Eden)</Text>
                             <Text style={styles.breakdownValue}>
-                                ₦{(stats.amountPending || 0).toLocaleString()}
+                                {formatNaira(pendingInEden)}
                             </Text>
                         </View>
                     </View>
@@ -153,8 +164,10 @@ const LandlordDashboard = () => {
                     <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Requests</Text>
                 </View>
                 <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Ionicons name="star-outline" size={20} color={colors.primary} />
-                    <Text style={[styles.statValue, { color: colors.text }]}>4.8</Text>
+                    <Ionicons name="star" size={18} color="#F59E0B" />
+                    <Text style={[styles.statValue, { color: colors.text }]}>
+                        {stats.rating ? Number(stats.rating).toFixed(1) : '5.0'}
+                    </Text>
                     <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Rating</Text>
                 </View>
             </View>
@@ -266,14 +279,14 @@ const LandlordDashboard = () => {
                     <View style={styles.chartSummaryItem}>
                         <Text style={[styles.chartSummaryLabel, { color: colors.textSecondary }]}>6-Month Total</Text>
                         <Text style={[styles.chartSummaryValue, { color: colors.text }]}>
-                            {formatAmount(totalEarnings)}
+                            {formatNaira(stats.last6MonthsTotal ?? totalEarnings)}
                         </Text>
                     </View>
                     <View style={[styles.chartSummaryDivider, { backgroundColor: colors.border }]} />
                     <View style={styles.chartSummaryItem}>
                         <Text style={[styles.chartSummaryLabel, { color: colors.textSecondary }]}>This Month</Text>
                         <Text style={[styles.chartSummaryValue, { color: colors.primary }]}>
-                            {formatAmount(stats.monthlyEarnings?.[currentMonth] || 0)}
+                            {formatNaira(stats.thisMonthEarnings ?? stats.monthlyEarnings?.[currentMonth] ?? 0)}
                         </Text>
                     </View>
                 </View>

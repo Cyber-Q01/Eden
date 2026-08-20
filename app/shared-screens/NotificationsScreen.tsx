@@ -145,7 +145,7 @@ const NotificationsScreen = () => {
   );
 
   return (
-    <ScreenWrapper withScrollView={false} style={{ backgroundColor: colors.background }}>
+    <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={styles.header}>
         <BackButton />

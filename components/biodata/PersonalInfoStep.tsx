@@ -16,7 +16,7 @@ type Props = {
 };
 
 const PersonalInfoStep = ({ form, updateForm, openModal, onShowDobPicker }: Props) => {
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
 
     const pickProfilePhoto = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -30,7 +30,39 @@ const PersonalInfoStep = ({ form, updateForm, openModal, onShowDobPicker }: Prop
 
     return (
         <View style={styles.stepContent}>
-            <SectionTitle title="Personal Information" subtitle="Tell us a bit about yourself" />
+            <SectionTitle title="Personal Information" subtitle="Enter your legal identity details" />
+
+            {/* Prominent Name Matching Notice */}
+            <View style={[styles.infoBanner, { backgroundColor: isDark ? '#0c1844' : '#EFF6FF', borderColor: isDark ? '#1E3A8A' : '#BFDBFE' }]}>
+                <Ionicons name="information-circle" size={20} color="#1D4ED8" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                    <Text style={[styles.infoBannerTitle, { color: isDark ? '#93C5FD' : '#1E40AF' }]}>
+                        Important Name Matching Requirement
+                    </Text>
+                    <Text style={[styles.infoBannerText, { color: isDark ? '#BFDBFE' : '#1E3A8A' }]}>
+                        Please enter your First Name and Last Name <Text style={{ fontWeight: '700' }}>EXACTLY as they appear on your National ID (NIN)</Text>. You can edit your names here to correct any typos before verification.
+                    </Text>
+                </View>
+            </View>
+
+            {/* Legal First & Last Name Inputs */}
+            <View style={styles.inputGroup}>
+                <FieldLabel>First Name (as on National ID)</FieldLabel>
+                <ThemedTextInput
+                    placeholder="e.g. Akin"
+                    value={form.first_name || ''}
+                    onChangeText={t => updateForm('first_name', t)}
+                />
+            </View>
+
+            <View style={styles.inputGroup}>
+                <FieldLabel>Last Name / Surname (as on National ID)</FieldLabel>
+                <ThemedTextInput
+                    placeholder="e.g. Oladele"
+                    value={form.last_name || ''}
+                    onChangeText={t => updateForm('last_name', t)}
+                />
+            </View>
 
             <View style={styles.inputGroup}>
                 <FieldLabel>Phone Number</FieldLabel>
@@ -43,7 +75,7 @@ const PersonalInfoStep = ({ form, updateForm, openModal, onShowDobPicker }: Prop
             </View>
 
             <View style={styles.inputGroup}>
-                <FieldLabel>Date of Birth</FieldLabel>
+                <FieldLabel>Date of Birth (as on National ID)</FieldLabel>
                 <DropdownButton
                     value={form.dob}
                     placeholder="Select date of birth"
@@ -90,6 +122,24 @@ const PersonalInfoStep = ({ form, updateForm, openModal, onShowDobPicker }: Prop
 
 const styles = StyleSheet.create({
     stepContent: { paddingTop: 8 },
+    infoBanner: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    infoBannerTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    infoBannerText: {
+        fontSize: 12,
+        lineHeight: 17,
+    },
     inputGroup: { marginBottom: 18 },
     profilePhotoWrap: { position: 'relative', width: 90, height: 90 },
     profilePhoto: { width: 90, height: 90, borderRadius: 45 },

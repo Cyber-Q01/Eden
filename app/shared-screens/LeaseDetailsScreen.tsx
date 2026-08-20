@@ -216,13 +216,13 @@ const LeaseDetailsScreen = () => {
                     <ActionButton
                         icon="headset-outline"
                         label="Support"
-                        onPress={() => { }}
+                        onPress={() => router.push('/shared-screens/HelpSupportScreen')}
                         colors={colors}
                     />
                     <ActionButton
                         icon="alert-circle-outline"
                         label="Report"
-                        onPress={() => { }}
+                        onPress={() => router.push('/profile/complaint-request')}
                         color="#F97316"
                         colors={colors}
                     />
@@ -245,7 +245,7 @@ const LeaseDetailsScreen = () => {
                 <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Payment History</Text>
-                        <TouchableOpacity>
+                        <TouchableOpacity onPress={() => router.push('/shared-screens/PaymentHistoryScreen')}>
                             <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>View All</Text>
                         </TouchableOpacity>
                     </View>

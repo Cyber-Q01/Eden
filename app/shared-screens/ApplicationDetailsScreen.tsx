@@ -21,7 +21,7 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import { useToast } from '../../components/Toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useApplicationDetails, useLandlordApplications } from '../../hooks/useApplications';
+import { useApplicationDetails, useLandlordApplications, Application } from '../../hooks/useApplications';
 import { supabase } from '../../lib/supabase';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -64,13 +64,21 @@ const STATUS_CONFIG = {
 
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 const ApplicationDetailsScreen = () => {
-  const { application_id } = useLocalSearchParams<{ application_id: string }>();
+  const params = useLocalSearchParams<{ id?: string; application_id?: string; applicationData?: string }>();
+  const targetAppId = params.application_id || params.id || null;
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const { role } = useAuth();
   const { showError } = useToast();
 
-  const { application, loading, refetch } = useApplicationDetails(application_id);
+  let initialAppData: Application | null = null;
+  if (params.applicationData) {
+    try {
+      initialAppData = JSON.parse(params.applicationData);
+    } catch {}
+  }
+
+  const { application, loading, refetch } = useApplicationDetails(targetAppId, initialAppData);
   const { respondToApplication, responding } = useLandlordApplications();
 
   const [agreementInfo, setAgreementInfo] = useState<{
@@ -182,8 +190,8 @@ const ApplicationDetailsScreen = () => {
 
   // Formatted data fields
   const applicantName = otherParty ? `${otherParty.first_name} ${otherParty.last_name}` : 'Akin Oladele';
-  const memberSinceYear = otherParty?.created_at
-    ? new Date(otherParty.created_at).getFullYear()
+  const memberSinceYear = (otherParty as any)?.created_at
+    ? new Date((otherParty as any).created_at).getFullYear()
     : '2026';
   const appliedDateStr = application.created_at
     ? new Date(application.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })

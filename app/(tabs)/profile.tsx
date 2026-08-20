@@ -26,6 +26,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCredits } from '../../hooks/useCredits';
 import { useProfile } from '../../hooks/useProfile';
+import { useSupportTickets } from '../../hooks/useSupportTickets';
 import { callEdgeFunction } from '../../lib/api';
 
 // ─── Small reusable pieces ────────────────────────────────────────────────────
@@ -114,6 +115,7 @@ const ProfileScreen = () => {
     const { credits, loading: creditsLoading } = useCredits();
     const { leases, fetchLeases, loading: leasesLoading } = useLeases();
     const { applications, refetch: fetchApplications, loading: appsLoading } = useMyApplications();
+    const { tickets } = useSupportTickets();
     const [showSignOutModal, setShowSignOutModal] = useState(false);
 
     useEffect(() => {
@@ -184,7 +186,7 @@ const ProfileScreen = () => {
     };
 
     return (
-        <ScreenWrapper withScrollView={false} style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
             <ScrollView
@@ -324,7 +326,13 @@ const ProfileScreen = () => {
                             icon="shield-checkmark-outline"
                             label="KYC Status"
                             value={profile?.is_verified ? 'Verified' : 'Pending'}
-                            onPress={() => { }}
+                            onPress={() => {
+                                if (profile?.is_verified) {
+                                    Alert.alert('KYC Verified ✓', 'Your identity and biometric verification are active on the Eden network.');
+                                } else {
+                                    router.push('/profilesetup/id-verification');
+                                }
+                            }}
                         />
                         <MenuRow
                             icon="flask-outline"
@@ -348,7 +356,9 @@ const ProfileScreen = () => {
                     <Section title="SUPPORT">
                         <MenuRow
                             icon="help-circle-outline"
-                            label="Help & Support"
+                            label="Help & Support Desk"
+                            badge={tickets.length > 0 ? `${tickets.length}` : undefined}
+                            badgeColor="#1D4ED8"
                             onPress={() => router.push('/shared-screens/HelpSupportScreen')}
                         />
                         <MenuRow

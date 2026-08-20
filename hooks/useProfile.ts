@@ -19,25 +19,36 @@ export const useProfile = () => {
         setLoading(true);
         setError(false);
         try {
-            // Fetch main profile from edge function
-            const data = await callEdgeFunction('profile', 'GET');
+            let data: any = null;
+            try {
+                // Try fetching from edge function first
+                data = await callEdgeFunction('profile', 'GET');
+            } catch (edgeErr) {
+                console.warn('[useProfile] Edge function notice, querying direct Supabase profile:', edgeErr);
+                const { data: userRow } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                data = userRow;
+            }
 
-            // Also fetch user_biodata directly (Supabase client has the join)
+            // Fetch user_biodata directly
             const { data: biodataRow } = await supabase
                 .from('user_biodata')
                 .select('*')
                 .eq('id', user.id)
                 .maybeSingle();
 
-            if (data) {
+            if (data || biodataRow) {
                 // Merge biodata so both access patterns work:
                 //   profile?.profile_photo  (flat)
                 //   profile?.user_biodata?.profile_photo  (nested)
                 setProfile({
-                    ...data,
+                    ...(data || {}),
                     user_biodata: biodataRow ?? null,
                     profile_photo: biodataRow?.profile_photo ?? data?.profile_photo ?? user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_photo ?? null,
-                    phone: biodataRow?.phone_number ?? data?.phone ?? null,
+                    phone: biodataRow?.phone_number ?? data?.phone_number ?? data?.phone ?? null,
                     gender: biodataRow?.gender ?? data?.gender ?? null,
                 });
             }

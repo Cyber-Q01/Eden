@@ -16,27 +16,38 @@ const withTimeout = <T>(promise: Promise<T> | PromiseLike<T>, ms: number = 60000
     ]);
 };
 
+export interface LandlordStats {
+    earnings: string;
+    activeCount: number;
+    tenantCount: number;
+    pendingRequests: number;
+    bookingCount?: number;
+    monthlyEarnings: number[];
+    totalCollected: number;
+    amountPaid: number;
+    amountPending: number;
+    last6MonthsTotal: number;
+    thisMonthEarnings: number;
+    rating?: number;
+}
+
 export const useLandlord = () => {
-    const { user, role } = useAuth();
+    const { user, role, delegatedLandlordId } = useAuth();
     const { showError, showSuccess } = useToast();
     const queryClient = useQueryClient();
 
     const { data, isLoading: loading, isError: error, refetch: fetchDashboardData } = useQuery({
-        queryKey: ['landlord-dashboard', user?.id],
+        queryKey: ['landlord-properties-v5', user?.id, role, delegatedLandlordId],
         queryFn: async () => {
             if (!user) return null;
             try {
                 const response = await callEdgeFunction<{ 
                     listings: any[]; 
-                    stats: { 
-                        earnings: string; 
-                        activeCount: number;
-                        tenantCount: number;
-                        pendingRequests: number;
-                        bookingCount?: number;
-                        monthlyEarnings: number[];
-                    };
+                    stats: LandlordStats;
                     applications?: any[];
+                    rentals?: any[];
+                    payouts?: any[];
+                    isAgent?: boolean;
                 }>('landlord-properties', 'GET');
                 return response;
             } catch (e) {
@@ -45,19 +56,28 @@ export const useLandlord = () => {
                 throw e;
             }
         },
-        enabled: !!user
+        enabled: !!user,
+        staleTime: 1000 * 30, // 30 seconds fresh cache
     });
 
-    const stats = data?.stats ?? { 
-        earnings: '₦0', 
+    const stats: LandlordStats = data?.stats ?? { 
+        earnings: '₦0.00', 
         activeCount: 0, 
         tenantCount: 0, 
         pendingRequests: 0, 
         bookingCount: 0,
-        monthlyEarnings: Array(12).fill(0) 
+        monthlyEarnings: Array(12).fill(0),
+        totalCollected: 0,
+        amountPaid: 0,
+        amountPending: 0,
+        last6MonthsTotal: 0,
+        thisMonthEarnings: 0,
+        rating: 5.0,
     };
     const activeListings = data?.listings ?? [];
     const applications = data?.applications ?? [];
+    const rentals = data?.rentals ?? [];
+    const payouts = data?.payouts ?? [];
 
     const addProperty = async (propertyData: any, imageUris: string[], videoUri?: string) => {
         if (!user) return { error: 'Not authorized' };
@@ -105,10 +125,11 @@ export const useLandlord = () => {
                 uploadedUrls.push(publicUrlData.publicUrl);
             }
 
-            // 2. Insert property via Edge Function
+            // 2. Insert property via Edge Function & Supabase
             console.log('[addProperty] Images uploaded. Calling add-property edge function...');
             const response = await callEdgeFunction('add-property', 'POST', {
                 ...propertyData,
+                moderation_status: 'pending',
                 images: uploadedUrls,
                 video_url: null, // Will be updated via background upload
             });
@@ -214,14 +235,32 @@ export const useLandlord = () => {
                 finalVideoUrl = videoUri;
             }
 
-            // 2. Update property via Edge Function
-            await callEdgeFunction('add-property', 'PUT', {
-                ...propertyData,
-                id: propertyId,
-                images: uploadedUrls,
-                ...(finalVideoUrl !== undefined && { video_url: finalVideoUrl }),
-                ...(videoUri === null && { video_url: null }),
-            });
+            // 2. Update property via Edge Function & direct Supabase sync
+            try {
+                await callEdgeFunction('add-property', 'PUT', {
+                    ...propertyData,
+                    id: propertyId,
+                    moderation_status: 'pending',
+                    rejection_reason: null,
+                    images: uploadedUrls,
+                    ...(finalVideoUrl !== undefined && { video_url: finalVideoUrl }),
+                    ...(videoUri === null && { video_url: null }),
+                });
+            } catch (efErr) {
+                console.warn('[updateProperty] Edge function notice, running direct update:', efErr);
+            }
+
+            // Always ensure Supabase database record has moderation_status = 'pending'
+            await supabase
+                .from('properties')
+                .update({
+                    ...propertyData,
+                    moderation_status: 'pending',
+                    rejection_reason: null,
+                    images: uploadedUrls,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', propertyId);
 
             // 3. Dispatch background video upload if new videoUri
             if (videoUri && !videoUri.startsWith('http')) {

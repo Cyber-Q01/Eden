@@ -1,20 +1,20 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, TextStyle, TouchableOpacity, ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleProp, StyleSheet, Text, TextStyle, TouchableOpacity, ViewStyle } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-
-import { ActivityIndicator } from 'react-native';
 
 interface CustomButtonProps {
     title: string;
     onPress: () => void;
-    style?: ViewStyle;
-    textStyle?: TextStyle;
+    style?: StyleProp<ViewStyle>;
+    textStyle?: StyleProp<TextStyle>;
     disabled?: boolean;
     loading?: boolean;
+    leftIcon?: React.ReactNode;
+    rightIcon?: React.ReactNode;
 }
 
-const CustomButton: React.FC<CustomButtonProps> = ({ title, onPress, style, textStyle, disabled, loading }) => {
+const CustomButton: React.FC<CustomButtonProps> = ({ title, onPress, style, textStyle, disabled, loading, leftIcon, rightIcon }) => {
     const { colors, isDark } = useTheme();
 
     return (
@@ -28,7 +28,11 @@ const CustomButton: React.FC<CustomButtonProps> = ({ title, onPress, style, text
                 {loading ? (
                     <ActivityIndicator color="#FFF" />
                 ) : (
-                    <Text style={[styles.text, textStyle]}>{title}</Text>
+                    <React.Fragment>
+                        {leftIcon}
+                        <Text style={[styles.text, textStyle, !!leftIcon && { marginLeft: 8 }]}>{title}</Text>
+                        {rightIcon}
+                    </React.Fragment>
                 )}
             </LinearGradient>
         </TouchableOpacity>

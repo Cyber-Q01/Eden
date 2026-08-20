@@ -39,8 +39,11 @@ const RentTrackerScreen = () => {
     return true;
   }) || [];
 
-  const formatCurrency = (amount: number) => {
-    return `N${amount.toLocaleString()}`;
+  const formatNaira = (amount: number | string | undefined | null): string => {
+    if (!amount && amount !== 0) return '₦0.00';
+    const num = typeof amount === 'string' ? parseFloat(amount.replace(/[^0-9.-]/g, '')) : Number(amount);
+    if (isNaN(num)) return '₦0.00';
+    return `₦${num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const calculateDueDate = (createdAt: string) => {
@@ -77,7 +80,7 @@ const RentTrackerScreen = () => {
       <View style={styles.summaryContent}>
         <View>
           <Text style={styles.summaryLabel}>Total Generated</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(data?.totalCollected || 0)}</Text>
+          <Text style={styles.summaryValue}>{formatNaira(data?.totalCollected || 0)}</Text>
         </View>
         <View style={styles.summaryRight}>
           <Text style={styles.summaryLabel}>Active Tenants</Text>
@@ -88,12 +91,12 @@ const RentTrackerScreen = () => {
       <View style={styles.breakdownContainer}>
         <View style={styles.breakdownItem}>
           <Text style={styles.breakdownLabel}>Paid to Account</Text>
-          <Text style={styles.breakdownValue}>{formatCurrency(data?.amountPaid || 0)}</Text>
+          <Text style={styles.breakdownValue}>{formatNaira(data?.amountPaid || 0)}</Text>
         </View>
         <View style={styles.breakdownDivider} />
         <View style={styles.breakdownItem}>
           <Text style={styles.breakdownLabel}>Pending (In Eden)</Text>
-          <Text style={styles.breakdownValue}>{formatCurrency(data?.amountPending || 0)}</Text>
+          <Text style={styles.breakdownValue}>{formatNaira(data?.amountPending || 0)}</Text>
         </View>
       </View>
 
@@ -131,7 +134,7 @@ const RentTrackerScreen = () => {
         <View style={styles.cardDetails}>
           <View>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Rent amount</Text>
-            <Text style={[styles.detailValue, { color: colors.primary }]}>{formatCurrency(item.amount)}/yr</Text>
+            <Text style={[styles.detailValue, { color: colors.primary }]}>{formatNaira(item.amount)}/yr</Text>
           </View>
           <View style={styles.dueInfo}>
             <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
@@ -156,12 +159,12 @@ const RentTrackerScreen = () => {
         <Ionicons name="checkmark" size={16} color="#059669" />
       </View>
       <View style={styles.paymentInfo}>
-        <Text style={[styles.paymentTitle, { color: colors.text }]}>{item.user?.first_name || 'User'} {item.user?.last_name || ''}- {formatCurrency(item.amount)}</Text>
+        <Text style={[styles.paymentTitle, { color: colors.text }]}>{item.user?.first_name || 'User'} {item.user?.last_name || ''}- {formatNaira(item.amount)}</Text>
         <Text style={[styles.paymentDate, { color: colors.textSecondary }]}>
           Paid: {new Date(item.paid_at || item.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
         </Text>
       </View>
-      <Text style={[styles.paymentAmount, { color: colors.primary }]}>{formatCurrency(item.amount)}</Text>
+      <Text style={[styles.paymentAmount, { color: colors.primary }]}>{formatNaira(item.amount)}</Text>
     </View>
   );
 

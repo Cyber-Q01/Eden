@@ -9,6 +9,7 @@ import {
     FlatList,
     Image,
     LayoutAnimation,
+    Linking,
     Platform,
     StyleSheet,
     Text,
@@ -151,7 +152,19 @@ const InspectionsScreen = () => {
                                         <Text style={[styles.renterLabel, { color: colors.textSecondary }]}>Prospective Renter</Text>
                                     </View>
                                 </View>
-                                <TouchableOpacity style={[styles.chatBtn, { backgroundColor: colors.primary }]}>
+                                <TouchableOpacity
+                                    style={[styles.chatBtn, { backgroundColor: colors.primary }]}
+                                    onPress={() => {
+                                        const renterAny: any = item.renter;
+                                        const phone = renterAny?.phone_number || renterAny?.phone;
+                                        if (phone) {
+                                            const clean = phone.replace(/[^0-9]/g, '');
+                                            Linking.openURL(`https://wa.me/234${clean.replace(/^0/, '').replace(/^234/, '')}`);
+                                        } else if (renterAny?.email) {
+                                            Linking.openURL(`mailto:${renterAny.email}?subject=Regarding%20Inspection%20for%20${encodeURIComponent(item.property?.title || 'Property')}`);
+                                        }
+                                    }}
+                                >
                                     <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
                                     <Text style={styles.chatBtnText}>Message</Text>
                                 </TouchableOpacity>
@@ -191,7 +204,7 @@ const InspectionsScreen = () => {
                             {role === 'TENANT' && (
                                 <TouchableOpacity 
                                     style={styles.helpBtn}
-                                    onPress={() => {/* Support logic */}}
+                                    onPress={() => router.push('/shared-screens/HelpSupportScreen')}
                                 >
                                     <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>Get Help</Text>
                                 </TouchableOpacity>

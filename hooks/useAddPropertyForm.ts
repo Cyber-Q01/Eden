@@ -140,14 +140,16 @@ export const useAddPropertyForm = (isEdit: boolean, propertyId?: string, initial
         }
     }, [role]);
 
-    // Calculate total price automatically
+    // Calculate total price automatically (Rent + 5% Platform Service Fee + ₦1,000 Escrow Fee + Agency + Caution + Legal)
     useEffect(() => {
         const rent = parseFloat(sanitizePrice(form.price)) || 0;
         const caution = parseFloat(sanitizePrice(form.caution_fee)) || 0;
         const legal = parseFloat(sanitizePrice(form.legal_fee)) || 0;
         const agency = role === 'AGENT' ? (rent * form.agency_fee_percentage) / 100 : 0;
+        const serviceFee = (rent * 5.0) / 100;
+        const escrowFee = rent > 0 ? 1000 : 0;
 
-        const total = rent + agency + caution + legal;
+        const total = rent + serviceFee + escrowFee + agency + caution + legal;
         setField('total_price', total);
     }, [form.price, form.agency_fee_percentage, form.caution_fee, form.legal_fee, role, setField]);
 
@@ -253,6 +255,9 @@ export const useAddPropertyForm = (isEdit: boolean, propertyId?: string, initial
             land_size: form.type.toLowerCase().includes('land') ? parseFloat(form.land_size || '0') : undefined,
             land_measurement_unit: form.type.toLowerCase().includes('land') ? form.land_measurement_unit : undefined,
             landlord_id: role === 'AGENT' ? form.landlord_id : undefined,
+            status: 'available',
+            moderation_status: 'pending',
+            rejection_reason: null, // Reset previous rejection on resubmission
         };
 
         const { error } = isEdit

@@ -3,7 +3,9 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -41,7 +43,7 @@ const AddBankScreen = () => {
         const loadBanks = async () => {
             const list = await fetchBanks();
             // Deduplicate by value just in case API returns duplicates
-            const unique = list.filter((v, i, a) => a.findIndex(t => t.value === v.value) === i);
+            const unique = list.filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.value === v.value) === i);
             setBanks(unique);
         };
         loadBanks();
@@ -98,57 +100,63 @@ const AddBankScreen = () => {
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-                <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: colors.textSecondary }]}>Account Number</Text>
-                    <ThemedTextInput
-                        placeholder="Enter 10-digit account number"
-                        value={accountNumber}
-                        onChangeText={setAccountNumber}
-                        keyboardType="numeric"
-                        maxLength={10}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+            >
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                    <View style={styles.inputGroup}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Account Number</Text>
+                        <ThemedTextInput
+                            placeholder="Enter 10-digit account number"
+                            value={accountNumber}
+                            onChangeText={setAccountNumber}
+                            keyboardType="numeric"
+                            maxLength={10}
+                        />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Select Bank</Text>
+                        <TouchableOpacity
+                            style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            onPress={() => setShowPicker(true)}
+                        >
+                            <Text style={[styles.dropdownText, { color: bank ? colors.text : colors.textSecondary }]}>
+                                {bank?.label || 'Select Bank'}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <View style={styles.labelRow}>
+                            <Text style={[styles.label, { color: colors.textSecondary }]}>Account Name</Text>
+                            {resolving && <ActivityIndicator size="small" color={colors.primary} />}
+                            {isVerified && !resolving && (
+                                <View style={styles.verifiedRow}>
+                                    <Ionicons name="checkmark-circle" size={16} color="#00C853" />
+                                    <Text style={[styles.verifiedText, { color: '#00C853' }]}>Verified</Text>
+                                </View>
+                            )}
+                        </View>
+                        <View style={[styles.nameDisplay, { backgroundColor: colors.card, borderColor: isVerified ? '#00C853' : colors.border }]}>
+                            <Text style={[styles.accountNameText, { color: accountName ? colors.text : colors.textSecondary }]}>
+                                {accountName || (resolving ? 'Resolving...' : 'Account name will appear here')}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <CustomButton
+                        title="Save Bank Account"
+                        onPress={handleSave}
+                        loading={saving}
+                        disabled={!isVerified || resolving}
+                        style={styles.saveButton}
                     />
-                </View>
-
-                <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: colors.textSecondary }]}>Select Bank</Text>
-                    <TouchableOpacity
-                        style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        onPress={() => setShowPicker(true)}
-                    >
-                        <Text style={[styles.dropdownText, { color: bank ? colors.text : colors.textSecondary }]}>
-                            {bank?.label || 'Select Bank'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                </View>
-
-                <View style={styles.inputGroup}>
-                    <View style={styles.labelRow}>
-                        <Text style={[styles.label, { color: colors.textSecondary }]}>Account Name</Text>
-                        {resolving && <ActivityIndicator size="small" color={colors.primary} />}
-                        {isVerified && !resolving && (
-                            <View style={styles.verifiedRow}>
-                                <Ionicons name="checkmark-circle" size={16} color="#00C853" />
-                                <Text style={[styles.verifiedText, { color: '#00C853' }]}>Verified</Text>
-                            </View>
-                        )}
-                    </View>
-                    <View style={[styles.nameDisplay, { backgroundColor: colors.card, borderColor: isVerified ? '#00C853' : colors.border }]}>
-                        <Text style={[styles.accountNameText, { color: accountName ? colors.text : colors.textSecondary }]}>
-                            {accountName || (resolving ? 'Resolving...' : 'Account name will appear here')}
-                        </Text>
-                    </View>
-                </View>
-
-                <CustomButton
-                    title="Save Bank Account"
-                    onPress={handleSave}
-                    loading={saving}
-                    disabled={!isVerified || resolving}
-                    style={styles.saveButton}
-                />
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
 
             <BottomSheetPicker
                 visible={showPicker}

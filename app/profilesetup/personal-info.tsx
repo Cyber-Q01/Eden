@@ -1,7 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import ThemedTextInput from '../../components/ThemedTextInput';
@@ -12,8 +19,13 @@ const PersonalInfoScreen = () => {
     const { colors } = useTheme();
 
     return (
-        <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScreenWrapper withScrollView={true}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.header}>
                     <Text style={[styles.title, { color: colors.primary }]}>Personal Information</Text>
                     <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Tell us a bit about yourself before verification</Text>
@@ -46,7 +58,8 @@ const PersonalInfoScreen = () => {
                         style={styles.nextButton}
                     />
                 </View>
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };

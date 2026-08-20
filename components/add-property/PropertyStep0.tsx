@@ -234,7 +234,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                         placeholder="0.00"
                         keyboardType="numeric"
                         containerStyle={[styles.textInputStyle, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>N</Text>}
+                        leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
                     />
                 </View>
 
@@ -256,7 +256,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                             value={agencyFeeAmount > 0 ? agencyFeeAmount.toFixed(2) : '0.00'}
                             editable={false}
                             containerStyle={[styles.textInputStyle, { backgroundColor: colors.background, borderColor: colors.border }]}
-                            leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>N</Text>}
+                            leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
                         />
                         <View style={{ marginTop: 12 }}>
                             <FieldLabel colors={colors}>Agency Fee Percentage ({form.agency_fee_percentage}%)</FieldLabel>
@@ -286,7 +286,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                                     placeholder="0.00"
                                     keyboardType="numeric"
                                     containerStyle={[styles.textInputStyle, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                    leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>N</Text>}
+                                    leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
                                 />
                             </View>
                             <View style={[styles.inputGroup, { flex: 1 }]}>
@@ -297,18 +297,18 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                                     placeholder="0.00"
                                     keyboardType="numeric"
                                     containerStyle={[styles.textInputStyle, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                    leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>N</Text>}
+                                    leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
                                 />
                             </View>
                         </View>
 
                         {/* Platform Service Warning */}
                         <View style={[styles.warningBanner, { backgroundColor: bannerBg, borderColor: bannerBorder }]}>
-                            <Ionicons name="warning" size={20} color="#F59E0B" style={{ marginRight: 10, marginTop: 2 }} />
+                            <Ionicons name="shield-checkmark" size={20} color="#1D4ED8" style={{ marginRight: 10, marginTop: 2 }} />
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.warningTitle, { color: bannerTitle }]}>Platform Service Change</Text>
+                                <Text style={[styles.warningTitle, { color: bannerTitle }]}>Fee Breakdown & Tenant Billing</Text>
                                 <Text style={[styles.warningText, { color: bannerText }]}>
-                                    Eden deducts 1.5% from each rent payment as a platform fee. This is charged to the tenant
+                                    Eden adds a 5% service charge and ₦1,000.00 escrow protection fee to the tenant's checkout total. Landlords receive 100% of their base rent upon confirmation.
                                 </Text>
                             </View>
                         </View>

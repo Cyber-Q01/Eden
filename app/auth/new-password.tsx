@@ -1,7 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import BackButton from '../../components/BackButton';
 import CustomButton from '../../components/CustomButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
@@ -51,57 +60,63 @@ const NewPasswordScreen = () => {
     };
 
     return (
-        <ScreenWrapper style={styles.container}>
+        <ScreenWrapper style={styles.container} withScrollView={true}>
             <View style={styles.header}>
                 <BackButton />
             </View>
 
-            <View style={styles.content}>
-                <View style={styles.topSection}>
-                    <Image
-                        source={require('../../assets/images/EdenIcon.png')}
-                        style={styles.icon}
-                        resizeMode="contain"
-                    />
-                    <Text style={[styles.title, { color: colors.primary }]}>Create New Password</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                        Your new password must be different from{'\n'}the old one
-                    </Text>
-                </View>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+            >
+                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={styles.topSection}>
+                        <Image
+                            source={require('../../assets/images/EdenIcon.png')}
+                            style={styles.icon}
+                            resizeMode="contain"
+                        />
+                        <Text style={[styles.title, { color: colors.primary }]}>Create New Password</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                            Your new password must be different from{'\n'}the old one
+                        </Text>
+                    </View>
 
-                <View style={styles.formContainer}>
-                    <ThemedTextInput
-                        placeholder="Enter new password"
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry={!showPassword}
-                        rightIcon={
-                            <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
-                                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        }
-                    />
+                    <View style={styles.formContainer}>
+                        <ThemedTextInput
+                            placeholder="Enter new password"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry={!showPassword}
+                            rightIcon={
+                                <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+                                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            }
+                        />
 
-                    <ThemedTextInput
-                        placeholder="Confirm new password"
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        secureTextEntry={!showConfirmPassword}
-                        rightIcon={
-                            <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-                                <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        }
-                    />
+                        <ThemedTextInput
+                            placeholder="Confirm new password"
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            secureTextEntry={!showConfirmPassword}
+                            rightIcon={
+                                <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                                    <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            }
+                        />
 
-                    <CustomButton
-                        title={loading ? "Resetting..." : "Reset Password"}
-                        onPress={handleResetPassword}
-                        style={styles.resetButton}
-                        disabled={loading}
-                    />
-                </View>
-            </View>
+                        <CustomButton
+                            title={loading ? "Resetting..." : "Reset Password"}
+                            onPress={handleResetPassword}
+                            style={styles.resetButton}
+                            disabled={loading}
+                        />
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };

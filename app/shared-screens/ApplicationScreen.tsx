@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Platform,
   RefreshControl,
   ScrollView,
@@ -448,16 +449,21 @@ const ApplicationScreen = () => {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
-        }
-        bounces={true}
-        alwaysBounceVertical={true}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
       >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+          }
+          bounces={true}
+          alwaysBounceVertical={true}
+        >
         {/* ── Property Summary Card ── */}
         <View style={[styles.propertyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Image
@@ -724,6 +730,7 @@ const ApplicationScreen = () => {
 
         <View style={{ height: 60 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {showDatePicker && (
         <DateTimePicker

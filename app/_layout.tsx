@@ -36,7 +36,7 @@ const queryClient = new QueryClient({
 });
 
 function InitialLayout() {
-  const { session, loading, role } = useAuth();
+  const { session, loading, role, completedBiodata } = useAuth();
 
   // Initialize notifications (requests permission, registers token, handles real-time sync)
   useNotifications();
@@ -56,14 +56,16 @@ function InitialLayout() {
     const isIndex = segmentCount === 0 || firstSegment === 'index' || firstSegment === undefined || firstSegment === '(index)';
 
     if (session) {
-      const isAcceptInvite = segments[0] === 'auth' && segments[1] === 'accept-invite';
-      const isNewPassword = segments[0] === 'auth' && segments[1] === 'new-password';
-      const isForgotPasswordVerification = segments[0] === 'auth' && segments[1] === 'forgot-password-verification';
+      const segList = segments as string[];
+      const isAcceptInvite = segList[0] === 'auth' && segList[1] === 'accept-invite';
+      const isNewPassword = segList[0] === 'auth' && segList[1] === 'new-password';
+      const isForgotPasswordVerification = segList[0] === 'auth' && segList[1] === 'forgot-password-verification';
 
-      // Only redirect if user is in an auth or onboarding route — NOT the index route.
-      // The index screen owns its own redirect (to avoid double-navigation conflicts).
       if ((inAuthGroup || inOnboarding) && !isAcceptInvite && !isNewPassword && !isForgotPasswordVerification) {
-        if (role === 'LANDLORD' || role === 'AGENT') {
+        // Enforce NIN verification gate: If unverified or incomplete, route to registration biodata setup
+        if (!completedBiodata) {
+          router.replace('/profilesetup/biodata');
+        } else if (role === 'LANDLORD' || role === 'AGENT') {
           router.replace('/landlord');
         } else {
           router.replace('/(tabs)');
@@ -74,7 +76,7 @@ function InitialLayout() {
         router.replace('/auth/login');
       }
     }
-  }, [session, loading, role, segments, rootNavigationState?.key]);
+  }, [session, loading, role, completedBiodata, segments, rootNavigationState?.key]);
 
   useEffect(() => {
     const handleBackPress = () => {

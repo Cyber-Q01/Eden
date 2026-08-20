@@ -81,21 +81,6 @@ export default function TabLayout() {
                     }}
                 />
                 <Tabs.Screen
-                    name="chat"
-                    options={{
-                        title: 'Chat',
-                        tabBarIcon: ({ color, focused }) => (
-                            <View style={styles.iconContainer}>
-                                <Image
-                                    source={require('../../assets/icon/tab/chat.png')}
-                                    style={[styles.icon, { tintColor: color }]}
-                                    resizeMode="contain"
-                                />
-                            </View>
-                        ),
-                    }}
-                />
-                <Tabs.Screen
                     name="profile"
                     options={{
                         title: 'Profile',

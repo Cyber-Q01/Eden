@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Image,
@@ -18,12 +18,14 @@ import ThemedTextInput from '../../components/ThemedTextInput';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
 import { handleError } from '../../lib/errorHandler';
-// import { configureGoogleSignIn, signInWithGoogle } from '../../lib/google-auth';
+import { isAppleSignInCancelled, signInWithApple } from '../../lib/apple-auth';
+import { configureGoogleSignIn, isGoogleSignInCancelled, signInWithGoogle } from '../../lib/google-auth';
 import { supabase } from '../../lib/supabase';
 import { withTimeout } from '../../lib/timeout';
 import { sanitizeEmail, validateAll, validateEmail, validateRequired } from '../../lib/validation';
 
-// configureGoogleSignIn();
+// Google sign-in is Android-only, Apple sign-in is iOS-only
+const isAndroid = Platform.OS === 'android';
 
 const LoginScreen = () => {
     const router = useRouter();
@@ -34,6 +36,11 @@ const LoginScreen = () => {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [socialLoading, setSocialLoading] = useState(false);
+
+    useEffect(() => {
+        if (isAndroid) configureGoogleSignIn();
+    }, []);
 
     const handleLogin = async () => {
         const validationError = validateAll([
@@ -68,21 +75,37 @@ const LoginScreen = () => {
         }
     };
 
-    // const handleGoogleLogin = async () => {
-    //     setLoading(true);
-    //     try {
-    //         console.log("handleGoogleLogin: Starting google signin")
-    //         const { data, error } = await signInWithGoogle();
-    //         if (error) throw error;
-    //         console.log("handleGoogleLogin: Google signin success")
-    //     } catch (e: any) {
-    //         const err = await handleError(e);
-    //         console.log(err)
-    //         showError(err);
-    //     } finally {
-    //         setLoading(false);
-    //     }
-    // };
+    const handleGoogleLogin = async () => {
+        setSocialLoading(true);
+        try {
+            const { data, error } = await signInWithGoogle();
+            if (error) throw error;
+            if (!data) throw new Error('Google sign-in did not return a session. Please try again.');
+            // Routing is handled automatically by _layout.tsx based on AuthContext state
+        } catch (e: any) {
+            if (isGoogleSignInCancelled(e)) return;
+            const err = await handleError(e);
+            showError(err);
+        } finally {
+            setSocialLoading(false);
+        }
+    };
+
+    const handleAppleLogin = async () => {
+        setSocialLoading(true);
+        try {
+            const { data, error } = await signInWithApple();
+            if (error) throw error;
+            if (!data) throw new Error('Apple sign-in did not return a session. Please try again.');
+            // Routing is handled automatically by _layout.tsx based on AuthContext state
+        } catch (e: any) {
+            if (isAppleSignInCancelled(e)) return;
+            const err = await handleError(e);
+            showError(err);
+        } finally {
+            setSocialLoading(false);
+        }
+    };
 
     return (
         <ScreenWrapper withScrollView={true}>
@@ -135,7 +158,7 @@ const LoginScreen = () => {
 
                     <TouchableOpacity onPress={() => router.push('/auth/signup')}>
                         <Text style={[styles.signupPrompt, { color: colors.textSecondary }]}>
-                            Don't have an Account ? <Text style={[styles.signupLink, { color: colors.primary }]}>Signup</Text>
+                            Don&apos;t have an Account ? <Text style={[styles.signupLink, { color: colors.primary }]}>Signup</Text>
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -146,20 +169,37 @@ const LoginScreen = () => {
                     </View>
 
                     <View style={styles.socialContainer}>
-                        <TouchableOpacity style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary }]}>
-                            <Image source={require('../../assets/icon/social/apple.png')} style={styles.socialIcon} />
-                            <Text style={[styles.socialButtonText, { color: colors.text }]}>Continue with Apple ID</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary }]}
-                            disabled={loading}
-                        >
-                            <Image source={require('../../assets/icon/social/google.png')} style={styles.socialIcon} />
-                            <Text style={[styles.socialButtonText, { color: colors.text }]}>
-                                Continue with Google
-                            </Text>
-                        </TouchableOpacity>
+                        {isAndroid ? (
+                            <TouchableOpacity
+                                style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary, opacity: socialLoading ? 0.6 : 1 }]}
+                                onPress={handleGoogleLogin}
+                                disabled={loading || socialLoading}
+                            >
+                                {socialLoading ? (
+                                    <ActivityIndicator size="small" color={colors.primary} />
+                                ) : (
+                                    <Image source={require('../../assets/icon/social/google.png')} style={styles.socialIcon} />
+                                )}
+                                <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                                    Continue with Google
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary, opacity: socialLoading ? 0.6 : 1 }]}
+                                onPress={handleAppleLogin}
+                                disabled={loading || socialLoading}
+                            >
+                                {socialLoading ? (
+                                    <ActivityIndicator size="small" color={colors.primary} />
+                                ) : (
+                                    <Image source={require('../../assets/icon/social/apple.png')} style={styles.socialIcon} />
+                                )}
+                                <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                                    Continue with Apple ID
+                                </Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
                 </ScrollView>

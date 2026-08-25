@@ -7,9 +7,22 @@ import { supabase } from '../lib/supabase';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+// ── Session-level push bookkeeping ───────────────────────────────────────────
+// useNotifications() is instantiated by several screens at once, so these
+// flags make sure permission prompts / foreground re-registration only fire
+// once per app session regardless of how many hook instances exist.
+let pushSettingsPromptShown = false;
+let foregroundPushWatcherStarted = false;
+let lastForegroundRegisterAt = 0;
+const FOREGROUND_REGISTER_MIN_GAP_MS = 90 * 1000; // max 1 re-registration per 90s
+let lastSavedToken: string | null = null;
+// Always points at the most recent registerForPushNotificationsAsync so the
+// single app-scoped AppState watcher registers the token for the current user.
+let latestRegisterPush: (() => Promise<unknown>) | null = null;
 
 export type NotificationType =
   | 'new_application'
@@ -203,7 +216,23 @@ export const useNotifications = () => {
       finalStatus = status;
     }
     if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
+      console.warn('[Push] Permission not granted:', finalStatus);
+      // On Android a "denied" POST_NOTIFICATIONS permission can only be
+      // fixed from the system app-settings screen — take the user there
+      // (once per session) instead of failing silently.
+      if (Platform.OS === 'android' && finalStatus === 'denied' && !pushSettingsPromptShown) {
+        pushSettingsPromptShown = true;
+        showError({
+          type: 'unknown',
+          title: 'Notifications Blocked',
+          message: 'Push notifications are turned off for Eden. Enable them in the screen that opens, then come back.',
+        });
+        try {
+          await Linking.openSettings();
+        } catch (e) {
+          console.warn('[Push] Could not open app settings:', e);
+        }
+      }
       return;
     }
 
@@ -214,6 +243,7 @@ export const useNotifications = () => {
 
     try {
       let token: string | undefined;
+      let tokenType: 'expo' | 'fcm' = 'expo';
 
       try {
         token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
@@ -223,6 +253,7 @@ export const useNotifications = () => {
         if (Platform.OS === 'android') {
           const deviceToken = await Notifications.getDevicePushTokenAsync();
           token = deviceToken.data;
+          if (token) tokenType = 'fcm';
         }
       }
 
@@ -231,7 +262,12 @@ export const useNotifications = () => {
         return;
       }
 
-      console.log('[Push] Token obtained:', token);
+      // Nothing changed — skip the DB write (this runs on every foreground)
+      if (token === lastSavedToken) {
+        return token;
+      }
+
+      console.log(`[Push] ${tokenType === 'expo' ? 'Expo push' : 'FCM'} token obtained: ${token.slice(0, 12)}...`);
 
       if (user) {
         const { error } = await supabase
@@ -242,7 +278,8 @@ export const useNotifications = () => {
         if (error) {
           console.error('[Push] Error saving push token:', error);
         } else {
-          console.log('[Push] Token saved to Supabase successfully');
+          lastSavedToken = token;
+          console.log(`[Push] ${tokenType} token saved to Supabase successfully`);
         }
       }
       return token;
@@ -250,6 +287,10 @@ export const useNotifications = () => {
       console.error('[Push] Error in registerForPushNotificationsAsync:', e);
     }
   };
+
+  // Keep the app-scoped foreground watcher pointed at the latest registrar
+  // (the hook is instantiated by several screens; this is idempotent).
+  latestRegisterPush = registerForPushNotificationsAsync;
 
   // ── Set Android notification channel (once on mount) ────────────────────
   useEffect(() => {
@@ -267,8 +308,30 @@ export const useNotifications = () => {
   }, []);
 
   useEffect(() => {
-    if (user) {
-      registerForPushNotificationsAsync();
+    if (!user) return;
+
+    registerForPushNotificationsAsync();
+
+    // Re-register on every return to foreground (throttled to 1/90s).
+    // Expo push tokens are tied to the running app build/bundle and go stale
+    // after code updates or dev-server restarts — refreshing the token when
+    // the app comes back to life keeps the stored token valid. This is the
+    // usual reason push stops arriving on a device (e.g. Android keeps the
+    // app process alive while a new bundle is loaded, leaving a dead token
+    // in the database).
+    if (!foregroundPushWatcherStarted) {
+      foregroundPushWatcherStarted = true;
+      let prev = AppState.currentState;
+      AppState.addEventListener('change', (next) => {
+        if (next === 'active' && prev !== 'active') {
+          const now = Date.now();
+          if (now - lastForegroundRegisterAt >= FOREGROUND_REGISTER_MIN_GAP_MS && latestRegisterPush) {
+            lastForegroundRegisterAt = now;
+            latestRegisterPush().catch(() => {});
+          }
+        }
+        prev = next;
+      });
     }
   }, [user]);
 

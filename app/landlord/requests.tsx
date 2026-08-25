@@ -19,9 +19,17 @@ import { useAgreementStatuses } from '../../hooks/useAgreementStatuses';
 import { Application, useLandlordApplications } from '../../hooks/useApplications';
 
 const STATUS_CONFIG = {
-  pending: { label: 'Pending Review', color: '#F59E0B', bg: '#FEF3C7', icon: 'time-outline' as const },
-  accepted: { label: 'Approved', color: '#10B981', bg: '#D1FAE5', icon: 'checkmark-circle-outline' as const },
-  declined: { label: 'Declined', color: '#EF4444', bg: '#FEE2E2', icon: 'close-circle-outline' as const },
+    pending: { label: 'Pending Review', color: '#F59E0B', bg: '#FEF3C7', icon: 'time-outline' as const },
+    accepted: { label: 'Approved', color: '#10B981', bg: '#D1FAE5', icon: 'checkmark-circle-outline' as const },
+    declined: { label: 'Declined', color: '#EF4444', bg: '#FEE2E2', icon: 'close-circle-outline' as const },
+};
+
+// Profile photo lives on user_biodata (users table has no photo column);
+// PostgREST returns user_biodata as [] when the user has no biodata row.
+const getUserPhoto = (u: any): string | null => {
+    if (!u) return null;
+    const bio = Array.isArray(u.user_biodata) ? u.user_biodata[0] : u.user_biodata;
+    return u.profile_photo || bio?.profile_photo || u.avatar_url || null;
 };
 
 export default function LandlordRentRequestsScreen() {
@@ -122,8 +130,15 @@ export default function LandlordRentRequestsScreen() {
 
         {/* Tenant Details Snippet */}
         <View style={[styles.renterSnippet, { backgroundColor: isDark ? '#0c1844' : '#F8FAFC', borderColor: colors.border }]}>
-          <View style={styles.renterAvatarWrap}>
-            <Ionicons name="person" size={16} color={colors.primary} />
+          <View style={[styles.renterAvatarWrap, { overflow: 'hidden' }]}>
+            {getUserPhoto(item.renter) ? (
+              <Image
+                source={{ uri: getUserPhoto(item.renter) as string }}
+                style={{ width: '100%', height: '100%' }}
+              />
+            ) : (
+              <Ionicons name="person" size={16} color={colors.primary} />
+            )}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.renterName, { color: colors.text }]}>{renterFullName}</Text>

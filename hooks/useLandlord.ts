@@ -134,6 +134,19 @@ export const useLandlord = () => {
                 video_url: null, // Will be updated via background upload
             });
 
+            // 2b. Guarantee the new property is in the PENDING moderation state immediately,
+            // even if the deployed edge function does not persist moderation_status.
+            try {
+                if (response?.id) {
+                    await supabase
+                        .from('properties')
+                        .update({ moderation_status: 'pending', rejection_reason: null })
+                        .eq('id', response.id);
+                }
+            } catch (modErr) {
+                console.warn('[addProperty] Could not force pending status:', modErr);
+            }
+
             // 3. Dispatch background video upload if videoUri exists
             if (videoUri) {
                 console.log(`[addProperty] Dispatching background video upload...`);
@@ -178,7 +191,9 @@ export const useLandlord = () => {
 
             console.log('[addProperty] Property listed successfully!');
             showSuccess('Property listed successfully');
-            queryClient.invalidateQueries({ queryKey: ['landlord-dashboard'] });
+            // Refresh the landlord listings (correct query key) so the new
+            // property appears in the Pending filter immediately.
+            queryClient.invalidateQueries({ queryKey: ['landlord-properties-v5'] });
             return { error: null };
         } catch (e: any) {
             console.error('[addProperty] Exception caught:', e);
@@ -303,7 +318,9 @@ export const useLandlord = () => {
             }
 
             showSuccess('Property updated successfully');
-            queryClient.invalidateQueries({ queryKey: ['landlord-dashboard'] });
+            // Refresh the landlord listings (correct query key) so the edited
+            // property immediately moves back into the Pending filter.
+            queryClient.invalidateQueries({ queryKey: ['landlord-properties-v5'] });
             return { error: null };
         } catch (e: any) {
             const err = await handleError(e);
@@ -333,7 +350,7 @@ export const useLandlord = () => {
             console.log('[deleteProperty] Edge function response:', JSON.stringify(result));
 
             showSuccess('Property deleted successfully');
-            queryClient.invalidateQueries({ queryKey: ['landlord-dashboard'] });
+            queryClient.invalidateQueries({ queryKey: ['landlord-properties-v5'] });
             console.log('[deleteProperty] Query cache invalidated.');
         } catch (e: any) {
             console.error('[deleteProperty] Exception caught:', e?.message ?? e);

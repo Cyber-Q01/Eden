@@ -114,7 +114,16 @@ Deno.serve(async (req) => {
         units_count = 1,
         land_size,
         land_measurement_unit,
+        moderation_status,
       } = body;
+
+      // ── Moderation state ─────────────────────────────────────────────────
+      // New listings start in the PENDING filter for admin review.
+      // Any edit/resubmission of an existing listing IMMEDIATELY re-enters
+      // the PENDING state so the changed listing is re-reviewed before going live.
+      const effectiveModerationStatus = isUpdate
+        ? 'pending'
+        : (typeof moderation_status === 'string' && moderation_status.length > 0 ? moderation_status : 'pending');
 
       // Required field validation
       const required: Record<string, unknown> = { title, description, price, location, type, state, lga };
@@ -218,6 +227,8 @@ Deno.serve(async (req) => {
             units_count,
             land_size: land_size ? parseFloat(land_size) : null,
             land_measurement_unit: land_measurement_unit ?? null,
+            moderation_status: effectiveModerationStatus,
+            rejection_reason: null, // Reset previous rejection on resubmission
           })
           .eq('id', propertyId)
           .select()
@@ -261,6 +272,8 @@ Deno.serve(async (req) => {
             units_count,
             land_size: land_size ? parseFloat(land_size) : null,
             land_measurement_unit: land_measurement_unit ?? null,
+            moderation_status: effectiveModerationStatus,
+            rejection_reason: null,
           })
           .select()
           .single();

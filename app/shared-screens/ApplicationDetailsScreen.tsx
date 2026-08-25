@@ -48,12 +48,12 @@ interface EdenPayload {
 }
 
 // ─── Parse message ────────────────────────────────────────────────────────────
-const parseMessage = (raw: string): { payload: EdenPayload | null; plainText: string } => {
+const parseMessage = (raw: string | EdenPayload | null | undefined): { payload: EdenPayload | null; plainText: string } => {
   try {
-    const obj = JSON.parse(raw);
-    if (obj.__eden_v === 1) return { payload: obj as EdenPayload, plainText: '' };
+    const obj: any = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (obj && obj.__eden_v === 1) return { payload: obj as EdenPayload, plainText: '' };
   } catch { }
-  return { payload: null, plainText: raw };
+  return { payload: null, plainText: typeof raw === 'string' ? raw : '' };
 };
 
 const STATUS_CONFIG = {
@@ -186,7 +186,21 @@ const ApplicationDetailsScreen = () => {
   const statusCfg = STATUS_CONFIG[application.status];
   const propertyImage = application.property?.images?.[0];
   const otherParty = isRenter ? application.owner : application.renter;
-  const { payload, plainText } = parseMessage(application.message ?? '');
+  // PostgREST returns user_biodata as [] (no row) or an object — normalize to object
+  const otherBio: any = Array.isArray((otherParty as any)?.user_biodata)
+    ? (otherParty as any)?.user_biodata[0]
+    : (otherParty as any)?.user_biodata;
+  const { payload, plainText } = parseMessage((application as any).message ?? '');
+
+  // Tenant image: users.profile_photo may be empty — the profile photo is
+  // actually stored on the user_biodata table (biodata/profile setup flow).
+  const tenantPhoto =
+    otherParty?.profile_photo ||
+    otherBio?.profile_photo ||
+    otherParty?.avatar_url ||
+    payload?.verification?.selfie_url ||
+    payload?.verification?.full_photo_url ||
+    null;
 
   // Formatted data fields
   const applicantName = otherParty ? `${otherParty.first_name} ${otherParty.last_name}` : 'Akin Oladele';
@@ -197,7 +211,7 @@ const ApplicationDetailsScreen = () => {
     ? new Date(application.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : '24 Apr 2026';
 
-  const phoneVal = otherParty?.phone_number || payload?.applicant.phone || '08012345678';
+  const phoneVal = otherParty?.phone_number || otherBio?.phone_number || payload?.applicant.phone || '08012345678';
   const emailVal = otherParty?.email || payload?.applicant.email || 'akin@example.com';
   const occupationVal = payload?.applicant.occupation || 'UI/UX Designer';
   const incomeVal = payload?.applicant.monthly_income
@@ -233,24 +247,21 @@ const ApplicationDetailsScreen = () => {
               {/* Avatar block */}
               <View style={styles.avatarWrapper}>
                 <View style={[styles.avatar, { backgroundColor: colors.primary + '15' }]}>
-                  {(() => {
-                    const tenantPhoto = otherParty?.profile_photo || otherParty?.avatar_url || payload?.verification?.selfie_url || payload?.verification?.full_photo_url;
-                    return tenantPhoto ? (
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        style={{ width: '100%', height: '100%' }}
-                        onPress={() => setPhotoViewer({ url: tenantPhoto, label: applicantName })}
-                      >
-                        <Image
-                          source={{ uri: tenantPhoto }}
-                          style={styles.avatarImage}
-                          contentFit="cover"
-                        />
-                      </TouchableOpacity>
-                    ) : (
-                      <Ionicons name="person" size={36} color={colors.primary} />
-                    );
-                  })()}
+                  {tenantPhoto ? (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      style={{ width: '100%', height: '100%' }}
+                      onPress={() => setPhotoViewer({ url: tenantPhoto, label: applicantName })}
+                    >
+                      <Image
+                        source={{ uri: tenantPhoto }}
+                        style={styles.avatarImage}
+                        contentFit="cover"
+                      />
+                    </TouchableOpacity>
+                  ) : (
+                    <Ionicons name="person" size={36} color={colors.primary} />
+                  )}
                 </View>
                 <View style={[styles.verifiedBadge, { backgroundColor: '#10B981' }]}>
                   <Ionicons name="checkmark" size={12} color="#FFF" />
@@ -689,9 +700,9 @@ const ApplicationDetailsScreen = () => {
               <View style={[celebStyles.divider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
               <View style={celebStyles.landlordRow}>
                 <View style={[celebStyles.landlordAvatar, { backgroundColor: isDark ? '#1E3A8A40' : '#EFF6FF' }]}>
-                  {otherParty?.profile_photo || otherParty?.avatar_url ? (
+                  {otherParty?.profile_photo || otherBio?.profile_photo || otherParty?.avatar_url ? (
                     <Image
-                      source={{ uri: otherParty?.profile_photo || otherParty?.avatar_url }}
+                      source={{ uri: otherParty?.profile_photo || otherBio?.profile_photo || otherParty?.avatar_url }}
                       style={celebStyles.landlordAvatarImg}
                       contentFit="cover"
                     />

@@ -73,8 +73,8 @@ export const useApplicationDetails = (applicationId: string | null | undefined, 
           .select(`
             *,
             property:properties(*),
-            renter:users!renter_id(id, first_name, last_name, email, role, is_verified, user_biodata!user_biodata_id_fkey(phone_number, profile_photo)),
-            owner:users!owner_id(id, first_name, last_name, email, role, is_verified, user_biodata!user_biodata_id_fkey(phone_number, profile_photo))
+            renter:users!renter_id(id, first_name, last_name, email, role, is_verified, created_at, user_biodata!user_biodata_id_fkey(phone_number, profile_photo)),
+            owner:users!owner_id(id, first_name, last_name, email, role, is_verified, created_at, user_biodata!user_biodata_id_fkey(phone_number, profile_photo))
           `)
           .eq('id', applicationId)
           .maybeSingle();
@@ -129,8 +129,8 @@ export const useMyApplications = () => {
           .select(`
             *,
             property:properties(*),
-            renter:users!renter_id(id, first_name, last_name, email, role, is_verified, user_biodata!user_biodata_id_fkey(phone_number, profile_photo)),
-            owner:users!owner_id(id, first_name, last_name, email, role, is_verified, user_biodata!user_biodata_id_fkey(phone_number, profile_photo))
+            renter:users!renter_id(id, first_name, last_name, email, role, is_verified, created_at, user_biodata!user_biodata_id_fkey(phone_number, profile_photo)),
+            owner:users!owner_id(id, first_name, last_name, email, role, is_verified, created_at, user_biodata!user_biodata_id_fkey(phone_number, profile_photo))
           `)
           .eq('renter_id', user.id)
           .order('created_at', { ascending: false });
@@ -234,8 +234,8 @@ export const useLandlordApplications = () => {
           .select(`
             *,
             property:properties(*),
-            renter:users!renter_id(id, first_name, last_name, email, role, is_verified, user_biodata!user_biodata_id_fkey(phone_number, profile_photo)),
-            owner:users!owner_id(id, first_name, last_name, email, role, is_verified, user_biodata!user_biodata_id_fkey(phone_number, profile_photo))
+            renter:users!renter_id(id, first_name, last_name, email, role, is_verified, created_at, user_biodata!user_biodata_id_fkey(phone_number, profile_photo)),
+            owner:users!owner_id(id, first_name, last_name, email, role, is_verified, created_at, user_biodata!user_biodata_id_fkey(phone_number, profile_photo))
           `)
           .order('created_at', { ascending: false });
 

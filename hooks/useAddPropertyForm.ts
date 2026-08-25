@@ -223,6 +223,16 @@ export const useAddPropertyForm = (isEdit: boolean, propertyId?: string, initial
     };
 
     const handleSubmit = async () => {
+        // Pending (under moderation review) listings cannot be edited or republished
+        if (isEdit && initialProperty && (initialProperty.moderation_status || 'pending').toLowerCase() === 'pending') {
+            showError({
+                type: 'unknown',
+                title: 'Listing Under Review',
+                message: 'This property is pending admin approval and cannot be edited right now. Please wait for the moderation review to complete.',
+            });
+            return;
+        }
+
         if (form.images.length === 0) {
             showError({ type: 'unknown', title: 'Photos Required', message: 'Please add at least one photo of the property.' });
             return;

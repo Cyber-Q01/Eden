@@ -127,6 +127,22 @@ const PropertyDetailScreen = () => {
     const isOwner = user?.id === property?.landlord_id;
     const isLandlord = role === 'LANDLORD';
     const isLandlordOrAgent = role === 'LANDLORD' || role === 'AGENT';
+    const isPendingModeration = (property?.moderation_status || 'pending').toLowerCase() === 'pending';
+
+    // Pending (under review) listings are not editable.
+    const handleEditListing = () => {
+        if (isPendingModeration) {
+            Alert.alert(
+                'Listing Under Review',
+                'This property is pending admin approval and cannot be edited right now. Please wait for the moderation review to complete before making changes.'
+            );
+            return;
+        }
+        router.push({
+            pathname: '/landlord-screens/add-property',
+            params: { id: propertyId },
+        });
+    };
 
     useEffect(() => {
         if (propertyId) {
@@ -553,14 +569,11 @@ const PropertyDetailScreen = () => {
                         </TouchableOpacity>
                     )}
 
-                    {/* Edit Button (Landlord/Agent Owner Only) */}
+                    {/* Edit Button (Landlord/Agent Owner Only) — disabled while pending moderation */}
                     {isOwner && (
                         <TouchableOpacity
-                            style={[styles.editButton, { backgroundColor: colors.primary, right: 16 }]}
-                            onPress={() => router.push({
-                                pathname: '/landlord-screens/add-property',
-                                params: { id: propertyId }
-                            })}
+                            style={[styles.editButton, { backgroundColor: colors.primary, right: 16, opacity: isPendingModeration ? 0.5 : 1 }]}
+                            onPress={handleEditListing}
                         >
                             <Ionicons name="pencil" size={18} color="#fff" />
                         </TouchableOpacity>
@@ -717,7 +730,7 @@ const PropertyDetailScreen = () => {
                                 </Text>
                             ) : (
                                 <Text style={[styles.landlordModNote, { color: colors.textSecondary }]}>
-                                    ⏳ Your submission is queued for moderation review. Listings are verified within 2–4 hours by Eden Trust & Safety team before going live.
+                                    ⏳ Your submission is queued for moderation review and is locked from edits until the review completes. Listings are verified within 2–4 hours by the Eden Trust & Safety team before going live.
                                 </Text>
                             )}
                         </View>
@@ -919,14 +932,13 @@ const PropertyDetailScreen = () => {
             <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 {isLandlordOrAgent ? (
                     <TouchableOpacity
-                        style={[styles.applyButton, { backgroundColor: colors.primary }]}
-                        onPress={() => router.push({
-                            pathname: '/landlord-screens/add-property',
-                            params: { id: property.id }
-                        })}
+                        style={[styles.applyButton, { backgroundColor: colors.primary, opacity: isPendingModeration ? 0.5 : 1 }]}
+                        onPress={handleEditListing}
                     >
                         <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.buttonText}>Edit Listing</Text>
+                        <Text style={styles.buttonText}>
+                            {isPendingModeration ? 'Listing Under Review' : 'Edit Listing'}
+                        </Text>
                     </TouchableOpacity>
                 ) : (
                     <>

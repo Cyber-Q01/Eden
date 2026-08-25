@@ -81,6 +81,13 @@ function InitialLayout() {
   useEffect(() => {
     const handleBackPress = () => {
       if (session) {
+        // Navigate within the app first — only exit when there is nothing left to go back to
+        if (router.canGoBack()) {
+          router.back();
+          return true;
+        }
+
+        // True home screens: pressing back exits the app (standard Android behavior)
         const currentSegment = segments[0];
         if (currentSegment === '(tabs)' || currentSegment === 'landlord' || currentSegment === 'profilesetup') {
           BackHandler.exitApp();
@@ -94,7 +101,7 @@ function InitialLayout() {
     return () => {
       subscription.remove();
     };
-  }, [session, segments]);
+  }, [session, segments, router]);
 
   return (
     <Stack

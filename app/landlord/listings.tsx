@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -35,6 +35,15 @@ const ListingsScreen = () => {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<FilterTab>('All');
+
+    // Always refresh listings when this screen comes into focus, so a newly
+    // added / edited property shows up in its correct filter (e.g. Pending)
+    // immediately after coming back from the add-property flow.
+    useFocusEffect(
+        useCallback(() => {
+            refetch();
+        }, [refetch])
+    );
 
     const liveCount = activeListings.filter(
         (l) => (l.moderation_status || '').toLowerCase() === 'live' || (l.moderation_status || '').toLowerCase() === 'approved'

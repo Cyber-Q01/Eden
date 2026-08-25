@@ -154,6 +154,11 @@ const AddPropertyScreen = () => {
 
     const isLastStep = currentStep === STEPS.length - 1;
 
+    // Pending (under moderation review) listings are locked from editing
+    const isPropertyPending = isEdit
+        && !!property
+        && (property.moderation_status || 'pending').toLowerCase() === 'pending';
+
     if (isEdit && fetchingProperty) {
         return (
             <ScreenWrapper withScrollView={true} style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
@@ -214,7 +219,7 @@ const AddPropertyScreen = () => {
         if (isLastStep) {
             return (
                 <Text style={styles.nextBtnText}>
-                    {isEdit ? 'Update' : 'Publish'}
+                    {isPropertyPending ? 'Under Review — Locked' : isEdit ? 'Update' : 'Publish'}
                 </Text>
             );
         }
@@ -254,6 +259,16 @@ const AddPropertyScreen = () => {
             {/* Segmented Step indicator */}
             {renderSegmentedProgress()}
 
+            {/* Pending moderation lock notice */}
+            {isPropertyPending && (
+                <View style={[styles.pendingBanner, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+                    <Ionicons name="time-outline" size={16} color="#D97706" />
+                    <Text style={styles.pendingBannerText}>
+                        This property is pending admin approval and is locked from edits until the moderation review completes.
+                    </Text>
+                </View>
+            )}
+
             {/* Form content with KeyboardAvoidingView */}
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -281,9 +296,9 @@ const AddPropertyScreen = () => {
                     </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                    style={[styles.nextBtn, { backgroundColor: colors.primary }]}
-                    onPress={isLastStep ? handleSubmit : handleNext}
-                    disabled={loading}
+                    style={[styles.nextBtn, { backgroundColor: colors.primary, opacity: isPropertyPending ? 0.5 : 1 }]}
+                    onPress={isLastStep ? (isPropertyPending ? undefined : handleSubmit) : handleNext}
+                    disabled={loading || isPropertyPending}
                 >
                     {getNextButtonContent()}
                 </TouchableOpacity>
@@ -422,6 +437,22 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         paddingHorizontal: 20,
         paddingBottom: 20,
+    },
+    pendingBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginHorizontal: 20,
+        marginBottom: 12,
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    pendingBannerText: {
+        flex: 1,
+        fontSize: 12.5,
+        color: '#92400E',
+        lineHeight: 17,
     },
     footer: {
         flexDirection: 'row',

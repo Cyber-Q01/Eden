@@ -6,6 +6,7 @@ import {
     FlatList,
     Keyboard,
     KeyboardAvoidingView,
+    Modal,
     PanResponder,
     Platform,
     StatusBar,
@@ -16,6 +17,7 @@ import {
     TouchableWithoutFeedback,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Markdown from 'react-native-markdown-display';
 import { useTheme } from '../context/ThemeContext';
 import { useAI } from '../hooks/useAI';
@@ -32,6 +34,7 @@ type Props = {
 const AIAssistantModal = ({ visible, onClose }: Props) => {
     const { colors } = useTheme();
     const { chatWithAssistant, loading } = useAI();
+    const insets = useSafeAreaInsets();
 
     const [messages, setMessages] = useState<Message[]>([
         {
@@ -198,6 +201,16 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
     if (!visible) return null;
 
     return (
+        // Real native Modal window: immune to the screen's own layout and
+        // KeyboardAvoidingView, so the sheet can no longer be pushed off-screen
+        // when the keyboard opens.
+        <Modal
+            visible={visible}
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            onRequestClose={closeModal}
+        >
         <View style={styles.overlayContainer} pointerEvents="box-none">
             <TouchableWithoutFeedback onPress={closeModal}>
                 <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
@@ -206,7 +219,7 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
             <KeyboardAvoidingView
                 style={styles.keyboardAvoid}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+                keyboardVerticalOffset={0}
             >
                 <Animated.View
                     style={[
@@ -279,8 +292,8 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
                         </View>
                     )}
 
-                    {/* Input */}
-                    <View style={[styles.inputRow, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+                    {/* Input — sits above the keyboard thanks to the KAV above */}
+                    <View style={[styles.inputRow, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom, 12) : 10 }]}>
                         <TextInput
                             style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
                             placeholder="Ask anything about renting..."
@@ -302,6 +315,7 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
                 </Animated.View>
             </KeyboardAvoidingView>
         </View>
+        </Modal>
     );
 };
 
@@ -319,7 +333,9 @@ const styles = StyleSheet.create({
     keyboardAvoid: {
         flex: 1,
         justifyContent: 'flex-end',
-        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 20 : 44,
+        // Inside the Modal window the status bar only overlaps on Android
+        // (edge-to-edge); keep a small top margin so the sheet never clips.
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 8,
     },
     sheet: {
         width: '100%',

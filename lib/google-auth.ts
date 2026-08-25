@@ -1,8 +1,30 @@
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { withTimeout } from './timeout';
 
 // Google OAuth web (OOB) client id — required for Android Play Services sign-in
 const WEB_CLIENT_ID = '495613775079-90oebo0gq73l2r8lntfv4ji2ut8pil2n.apps.googleusercontent.com';
+
+// Google OAuth client id of type "iOS" — required for Google sign-in on iOS.
+// Create it in Google Cloud Console (Credentials → Create OAuth client ID →
+// iOS → bundle id of your iOS app build), then set it in .env:
+//   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=123456789012-abcdefghijklmnop.apps.googleusercontent.com
+// (reload the app after changing .env — the value is read at bundle time)
+const IOS_CLIENT_ID = (process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '').trim();
+
+const isPlaceholderClientId = (id: string): boolean =>
+    !id || id.startsWith('YOUR_') || id.includes('REPLACE') || id === 'undefined';
+
+/**
+ * Android is configured out of the box (web client id).
+ * iOS needs EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID in .env.
+ */
+export const isGoogleSignInConfigured = (): boolean => {
+    if (Platform.OS === 'ios') {
+        return !isPlaceholderClientId(IOS_CLIENT_ID);
+    }
+    return true;
+};
 
 // The native module is resolved lazily. If an older native build is running
 // that does not include @react-native-google-signin/google-signin yet, the
@@ -26,6 +48,9 @@ export const configureGoogleSignIn = (): boolean => {
         const GoogleSignin = getGoogleSignin();
         GoogleSignin.configure({
             webClientId: WEB_CLIENT_ID,
+            ...(Platform.OS === 'ios' && !isPlaceholderClientId(IOS_CLIENT_ID)
+                ? { iosClientId: IOS_CLIENT_ID }
+                : {}),
             offlineAccess: true,
         });
         return true;
@@ -48,9 +73,15 @@ export const isGoogleSignInCancelled = (error: any): boolean => {
 
 export const signInWithGoogle = async () => {
     try {
+        if (!isGoogleSignInConfigured()) {
+            throw new Error(
+                'Google sign-in is not set up for iOS yet. Add your iOS Google client ID to .env as EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, then reload the app.'
+            );
+        }
+
         const GoogleSignin = getGoogleSignin();
 
-        if (typeof GoogleSignin.hasPlayServices === 'function') {
+        if (Platform.OS === 'android' && typeof GoogleSignin.hasPlayServices === 'function') {
             const hasPlayServices = await GoogleSignin.hasPlayServices();
             if (!hasPlayServices) {
                 throw new Error('Google Play Services is not available on this device.');

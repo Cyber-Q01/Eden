@@ -24,8 +24,8 @@ import { supabase } from '../../lib/supabase';
 import { withTimeout } from '../../lib/timeout';
 import { sanitizeEmail, validateAll, validateEmail, validateRequired } from '../../lib/validation';
 
-// Google sign-in is Android-only, Apple sign-in is iOS-only
-const isAndroid = Platform.OS === 'android';
+// Google sign-in: Android + iOS. Apple sign-in: iOS only.
+const isIOS = Platform.OS === 'ios';
 
 const LoginScreen = () => {
     const router = useRouter();
@@ -39,7 +39,7 @@ const LoginScreen = () => {
     const [socialLoading, setSocialLoading] = useState(false);
 
     useEffect(() => {
-        if (isAndroid) configureGoogleSignIn();
+        configureGoogleSignIn();
     }, []);
 
     const handleLogin = async () => {
@@ -169,22 +169,7 @@ const LoginScreen = () => {
                     </View>
 
                     <View style={styles.socialContainer}>
-                        {isAndroid ? (
-                            <TouchableOpacity
-                                style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary, opacity: socialLoading ? 0.6 : 1 }]}
-                                onPress={handleGoogleLogin}
-                                disabled={loading || socialLoading}
-                            >
-                                {socialLoading ? (
-                                    <ActivityIndicator size="small" color={colors.primary} />
-                                ) : (
-                                    <Image source={require('../../assets/icon/social/google.png')} style={styles.socialIcon} />
-                                )}
-                                <Text style={[styles.socialButtonText, { color: colors.text }]}>
-                                    Continue with Google
-                                </Text>
-                            </TouchableOpacity>
-                        ) : (
+                        {isIOS && (
                             <TouchableOpacity
                                 style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary, opacity: socialLoading ? 0.6 : 1 }]}
                                 onPress={handleAppleLogin}
@@ -200,6 +185,21 @@ const LoginScreen = () => {
                                 </Text>
                             </TouchableOpacity>
                         )}
+
+                        <TouchableOpacity
+                            style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.primary, opacity: socialLoading ? 0.6 : 1 }]}
+                            onPress={handleGoogleLogin}
+                            disabled={loading || socialLoading}
+                        >
+                            {socialLoading ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                                <Image source={require('../../assets/icon/social/google.png')} style={styles.socialIcon} />
+                            )}
+                            <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                                Continue with Google
+                            </Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
                 </ScrollView>

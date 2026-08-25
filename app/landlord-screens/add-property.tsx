@@ -179,7 +179,9 @@ const AddPropertyScreen = () => {
                     const isLast = index === STEPS.length - 1;
 
                     return (
-                        <View key={index} style={styles.stepItemWrapper}>
+                        // Last step must not flex — the connecting line should
+                        // span the full width and end exactly on the last dot
+                        <View key={index} style={[styles.stepItemWrapper, { flex: isLast ? 0 : 1 }]}>
                             {/* Dot */}
                             <View
                                 style={[
@@ -407,7 +409,9 @@ const styles = StyleSheet.create({
     segmentedProgressContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 24,
+        // Same horizontal padding as the rest of the screen so the bar
+        // spans the full content width, centered
+        paddingHorizontal: 20,
         paddingBottom: 20,
     },
     stepItemWrapper: {

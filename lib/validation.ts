@@ -20,6 +20,23 @@ export const sanitizeText = (value: string) =>
 /** Strip non-currency chars — for price inputs */
 export const sanitizePrice = (value: string) => value.replace(/[^0-9.]/g, '');
 
+/**
+ * Format a price for DISPLAY only — adds thousands separators as the user
+ * types: 600000 -> 600,000 | 6000000 -> 6,000,000
+ *
+ * Always run sanitizePrice() before writing to the database so commas
+ * never reach the server (e.g. parseFloat(sanitizePrice(form.price))).
+ */
+export const formatPriceInput = (value: string): string => {
+    const clean = sanitizePrice(value);
+    if (!clean) return '';
+    const num = Number(clean);
+    if (isNaN(num)) return clean;
+    const formatted = num.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    // Keep a trailing "." the user is in the middle of typing
+    return clean.endsWith('.') ? `${formatted}.` : formatted;
+};
+
 
 // ─── Validators ────────────────────────────────────────────────────────────────
 // Each returns an error message or null if valid.

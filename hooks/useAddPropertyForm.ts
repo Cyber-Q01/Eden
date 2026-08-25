@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { useAgentManagement } from './useAgentManagement';
 import {
+    formatPriceInput,
     sanitizePrice,
     sanitizeText,
     validateAll,
@@ -94,8 +95,16 @@ export const useAddPropertyForm = (isEdit: boolean, propertyId?: string, initial
         landlord: false,
     });
 
-    const setField = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) =>
-        setForm(prev => ({ ...prev, [key]: value })), []);
+    const setField = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
+        // Price fields are displayed with thousands separators (600,000) while
+        // typing. Commas are stripped again via sanitizePrice() on submit, so
+        // the database always receives a clean number.
+        if ((key === 'price' || key === 'caution_fee' || key === 'legal_fee') && typeof value === 'string') {
+            setForm(prev => ({ ...prev, [key]: formatPriceInput(value) }));
+            return;
+        }
+        setForm(prev => ({ ...prev, [key]: value }));
+    }, []);
 
     const openModal = (key: keyof typeof modals) => setModals(prev => ({ ...prev, [key]: true }));
     const closeModal = (key: keyof typeof modals) => setModals(prev => ({ ...prev, [key]: false }));
@@ -107,12 +116,12 @@ export const useAddPropertyForm = (isEdit: boolean, propertyId?: string, initial
                 listing_purpose: initialProperty.listing_purpose || 'rent',
                 title: initialProperty.title || '',
                 description: initialProperty.description || '',
-                price: initialProperty.price?.toString() || '',
+                price: formatPriceInput(initialProperty.price?.toString() || ''),
                 billing_period: initialProperty.billing_period || 'yearly',
                 type: initialProperty.type || '',
                 agency_fee_percentage: initialProperty.agency_fee_percentage || 5,
-                caution_fee: initialProperty.caution_fee?.toString() || '',
-                legal_fee: initialProperty.legal_fee?.toString() || '',
+                caution_fee: formatPriceInput(initialProperty.caution_fee?.toString() || ''),
+                legal_fee: formatPriceInput(initialProperty.legal_fee?.toString() || ''),
                 total_price: initialProperty.total_price || 0,
                 state: initialProperty.state || '',
                 lga: initialProperty.lga || '',

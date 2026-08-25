@@ -231,7 +231,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                     <ThemedTextInput
                         value={form.price}
                         onChangeText={(v: string) => setField('price', v)}
-                        placeholder="0.00"
+                        placeholder="600,000"
                         keyboardType="numeric"
                         containerStyle={[styles.textInputStyle, { backgroundColor: colors.card, borderColor: colors.border }]}
                         leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
@@ -253,7 +253,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                     <View style={styles.inputGroup}>
                         <FieldLabel colors={colors}>Agency Fee (₦)</FieldLabel>
                         <ThemedTextInput
-                            value={agencyFeeAmount > 0 ? agencyFeeAmount.toFixed(2) : '0.00'}
+                            value={agencyFeeAmount > 0 ? agencyFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                             editable={false}
                             containerStyle={[styles.textInputStyle, { backgroundColor: colors.background, borderColor: colors.border }]}
                             leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
@@ -283,7 +283,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                                 <ThemedTextInput
                                     value={form.caution_fee}
                                     onChangeText={(v: string) => setField('caution_fee', v)}
-                                    placeholder="0.00"
+                                    placeholder="60,000"
                                     keyboardType="numeric"
                                     containerStyle={[styles.textInputStyle, { backgroundColor: colors.card, borderColor: colors.border }]}
                                     leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}
@@ -294,7 +294,7 @@ export const PropertyStep0 = ({ form, setField, role, landlords, openModal }: an
                                 <ThemedTextInput
                                     value={form.legal_fee}
                                     onChangeText={(v: string) => setField('legal_fee', v)}
-                                    placeholder="0.00"
+                                    placeholder="30,000"
                                     keyboardType="numeric"
                                     containerStyle={[styles.textInputStyle, { backgroundColor: colors.card, borderColor: colors.border }]}
                                     leftIcon={<Text style={[styles.prefixText, { color: colors.primary }]}>₦</Text>}

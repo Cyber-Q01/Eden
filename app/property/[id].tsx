@@ -1,9 +1,9 @@
 import BackButton from '@/components/BackButton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -123,6 +123,14 @@ const PropertyDetailScreen = () => {
     const [hasApplied, setHasApplied] = useState(false);
 
     const propertyId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
+
+    // Always refetch when the screen is focused so the moderation status
+    // (and thus the edit-button state) is never stale
+    useFocusEffect(
+        useCallback(() => {
+            if (propertyId) refetch();
+        }, [propertyId, refetch])
+    );
 
     const isOwner = user?.id === property?.landlord_id;
     const isLandlord = role === 'LANDLORD';
@@ -569,10 +577,10 @@ const PropertyDetailScreen = () => {
                         </TouchableOpacity>
                     )}
 
-                    {/* Edit Button (Landlord/Agent Owner Only) — disabled while pending moderation */}
+                    {/* Edit Button (Landlord/Agent Owner Only) — grayed while pending moderation */}
                     {isOwner && (
                         <TouchableOpacity
-                            style={[styles.editButton, { backgroundColor: colors.primary, right: 16, opacity: isPendingModeration ? 0.5 : 1 }]}
+                            style={[styles.editButton, { backgroundColor: isPendingModeration ? '#9CA3AF' : colors.primary, right: 16 }]}
                             onPress={handleEditListing}
                         >
                             <Ionicons name="pencil" size={18} color="#fff" />
@@ -932,7 +940,7 @@ const PropertyDetailScreen = () => {
             <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 {isLandlordOrAgent ? (
                     <TouchableOpacity
-                        style={[styles.applyButton, { backgroundColor: colors.primary, opacity: isPendingModeration ? 0.5 : 1 }]}
+                        style={[styles.applyButton, { backgroundColor: isPendingModeration ? '#9CA3AF' : colors.primary }]}
                         onPress={handleEditListing}
                     >
                         <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />

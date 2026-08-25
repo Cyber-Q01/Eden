@@ -171,6 +171,19 @@ Deno.serve(async (req) => {
       }
 
       if (isUpdate) {
+        // ── Moderation guard: listings pending review cannot be edited (admins bypass) ──
+        if (userRecord.role !== 'ADMIN') {
+          const { data: currentProp } = await adminClient
+            .from('properties')
+            .select('moderation_status')
+            .eq('id', propertyId)
+            .maybeSingle();
+
+          if (currentProp && (currentProp.moderation_status || '').toLowerCase() === 'pending') {
+            return errorResponse('Property is pending moderation review and cannot be edited', 403);
+          }
+        }
+
         // Verify access to the property
         if (userRecord.role === 'AGENT') {
           // Agent must have this property assigned to them

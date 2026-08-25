@@ -209,6 +209,30 @@ export const useLandlord = () => {
         try {
             console.log('[updateProperty] Starting update for', propertyId);
 
+            // ── HARD GUARD: listings pending admin approval cannot be edited ──
+            // This is the single funnel every edit path goes through, so the
+            // rule holds no matter which screen the edit was started from.
+            try {
+                const { data: currentRow } = await supabase
+                    .from('properties')
+                    .select('moderation_status')
+                    .eq('id', propertyId)
+                    .maybeSingle();
+
+                const currentStatus = (currentRow?.moderation_status || '').toLowerCase();
+                if (currentStatus === 'pending') {
+                    showError({
+                        type: 'unknown',
+                        title: 'Listing Under Review',
+                        message: 'This property is pending admin approval and cannot be edited. Please wait for the moderation review to complete.',
+                    });
+                    return { error: 'Property is pending moderation and cannot be edited' };
+                }
+            } catch (statusCheckErr) {
+                // If the status check itself fails, continue — don't break normal edits
+                console.warn('[updateProperty] Moderation status check failed, continuing:', statusCheckErr);
+            }
+
             // Separate existing remote URLs from new local URIs
             const existingUrls = imageUris.filter(uri => uri.startsWith('http'));
             const newLocalUris = imageUris.filter(uri => !uri.startsWith('http'));

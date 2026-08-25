@@ -283,7 +283,7 @@ export const useLandlordApplications = () => {
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', applicationId);
 
-      // 2. Initialize rental record with 5% fee + ₦1,000 escrow fee + caution fee structure
+      // 2. Initialize rental record + auto-reject all other applications on accept
       if (action === 'accept') {
         try {
           const { data: appData } = await supabase
@@ -324,6 +324,28 @@ export const useLandlordApplications = () => {
                 paystack_reference: paystackRef,
                 status: 'awaiting_payment',
               });
+            }
+
+            // ── Auto-decline all OTHER pending applications for this property ──
+            try {
+              await supabase
+                .from('property_applications')
+                .update({ status: 'declined', updated_at: new Date().toISOString() })
+                .eq('property_id', appData.property_id)
+                .eq('status', 'pending')
+                .neq('id', applicationId);
+            } catch (autoDeclineErr) {
+              console.warn('[respondToApplication] Auto-decline warning:', autoDeclineErr);
+            }
+
+            // ── Mark property as taken so it stops appearing in search ──
+            try {
+              await supabase
+                .from('properties')
+                .update({ status: 'taken', updated_at: new Date().toISOString() })
+                .eq('id', appData.property_id);
+            } catch (statusErr) {
+              console.warn('[respondToApplication] Property status update warning:', statusErr);
             }
           }
         } catch (rentalInitErr) {

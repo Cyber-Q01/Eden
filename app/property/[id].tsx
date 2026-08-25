@@ -2,7 +2,8 @@ import BackButton from '@/components/BackButton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -15,6 +16,7 @@ import {
     Platform,
     Pressable,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TextInput,
@@ -25,10 +27,9 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useInspections } from '../../hooks/useInspections';
-import { useFavorites, useProperty } from '../../hooks/useProperties';
 import { useLandlord } from '../../hooks/useLandlord';
+import { useFavorites, useProperty } from '../../hooks/useProperties';
 import { supabase } from '../../lib/supabase';
-import { useVideoPlayer, VideoView } from 'expo-video';
 
 const { width } = Dimensions.get('window');
 
@@ -50,42 +51,32 @@ const getFurnishingLabel = (val: string) => {
     return map[val] ?? val;
 };
 
+const getAmenityIcon = (label: string): { name: string; set: 'ion' | 'mci' } => {
+    const l = (label || '').toLowerCase();
+    if (l.includes('water')) return { name: 'water-outline', set: 'ion' };
+    if (l.includes('shield') || l.includes('security') || l.includes('guard')) return { name: 'shield-outline', set: 'ion' };
+    if (l.includes('park') || l.includes('car') || l.includes('garage')) return { name: 'car-outline', set: 'ion' };
+    if (l.includes('wifi') || l.includes('internet') || l.includes('network')) return { name: 'wifi-outline', set: 'ion' };
+    if (l.includes('gen') || l.includes('power') || l.includes('electric') || l.includes('light')) return { name: 'flash-outline', set: 'ion' };
+    if (l.includes('tile') || l.includes('floor')) return { name: 'home-outline', set: 'ion' };
+    if (l.includes('kitch') || l.includes('cook')) return { name: 'restaurant-outline', set: 'ion' };
+    if (l.includes('balcon') || l.includes('terrace') || l.includes('deck')) return { name: 'business-outline', set: 'ion' };
+    if (l.includes('ac') || l.includes('air') || l.includes('cool')) return { name: 'thermometer-outline', set: 'ion' };
+    if (l.includes('pool') || l.includes('swim')) return { name: 'boat-outline', set: 'ion' };
+    if (l.includes('gym') || l.includes('fit')) return { name: 'fitness-outline', set: 'ion' };
+    if (l.includes('cctv') || l.includes('camera')) return { name: 'videocam-outline', set: 'ion' };
+    if (l.includes('fence') || l.includes('gate')) return { name: 'lock-closed-outline', set: 'ion' };
+    return { name: 'checkmark-circle-outline', set: 'ion' };
+};
+
 const FALLBACK_IMAGE = require('../../assets/images/Homes/home1.png');
-const FALLBACK_AVATAR = { uri: 'https://ui-avatars.com/api/?name=User&size=128&background=2563EB&color=fff' }; // Add a placeholder
+const FALLBACK_AVATAR = { uri: 'https://ui-avatars.com/api/?name=User&size=128&background=2563EB&color=fff' };
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 const Badge = ({ label, color, bg }: { label: string; color: string; bg: string }) => (
     <View style={[styles.badge, { backgroundColor: bg }]}>
         <Text style={[styles.badgeText, { color }]}>{label}</Text>
-    </View>
-);
-
-const FeatureChip = ({
-    icon,
-    label,
-    iconSet = 'ion',
-    colors,
-}: {
-    icon: string;
-    label: string;
-    iconSet?: 'ion' | 'mci';
-    colors: any;
-}) => (
-    <View style={[styles.featureChip, { backgroundColor: colors.primary + '10' }]}>
-        {iconSet === 'ion' ? (
-            <Ionicons name={icon as any} size={20} color={colors.primary} />
-        ) : (
-            <MaterialCommunityIcons name={icon as any} size={20} color={colors.primary} />
-        )}
-        <Text style={[styles.featureChipLabel, { color: colors.text }]}>{label}</Text>
-    </View>
-);
-
-const AmenityTag = ({ label, colors }: { label: string; colors: any }) => (
-    <View style={[styles.amenityTag, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
-        <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-        <Text style={[styles.amenityTagText, { color: colors.text }]}>{label}</Text>
     </View>
 );
 
@@ -129,6 +120,7 @@ const PropertyDetailScreen = () => {
     const [hasInspectionPassed, setHasInspectionPassed] = useState(false);
     const [bookingDetails, setBookingDetails] = useState<any>(null);
     const [booking, setBooking] = useState(false);
+    const [hasApplied, setHasApplied] = useState(false);
 
     const propertyId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
 
@@ -172,15 +164,30 @@ const PropertyDetailScreen = () => {
                 } catch (err) {
                     console.warn('Booking info fetch notice:', err);
                 }
+
+                // Check if user has already applied
+                try {
+                    const { data: appData } = await supabase
+                        .from('property_applications')
+                        .select('id')
+                        .eq('property_id', propertyId)
+                        .eq('renter_id', user.id)
+                        .neq('status', 'declined')
+                        .limit(1)
+                        .maybeSingle();
+                    setHasApplied(!!appData);
+                } catch (err) {
+                    console.warn('Application check notice:', err);
+                }
             };
 
             fetchBookingInfo();
-            
+
             // Increment view count
             const incrementView = async () => {
                 try {
-                    const { error } = await supabase.rpc('increment_view_count', { 
-                        p_property_id: propertyId 
+                    const { error } = await supabase.rpc('increment_view_count', {
+                        p_property_id: propertyId
                     });
                     if (error) console.error('[PropertyDetail] Error incrementing view count:', error);
                 } catch (err) {
@@ -267,6 +274,17 @@ const PropertyDetailScreen = () => {
         );
     };
 
+    const handleShare = async () => {
+        try {
+            await Share.share({
+                message: `Check out "${property?.title}" in ${property?.location} on Eden Home: https://edenhome.ng/property/${propertyId}`,
+                title: property?.title || 'Property on Eden',
+            });
+        } catch (e) {
+            console.warn('Share notice:', e);
+        }
+    };
+
     const handleBookInspection = async () => {
         if (isBooked) {
             try {
@@ -296,11 +314,11 @@ const PropertyDetailScreen = () => {
                 }
 
                 const dateStr = bookingData
-                    ? new Date(bookingData.preferred_date).toLocaleDateString('en-NG', { 
-                        weekday: 'long', 
-                        day: 'numeric', 
-                        month: 'short', 
-                        year: 'numeric' 
+                    ? new Date(bookingData.preferred_date).toLocaleDateString('en-NG', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
                     })
                     : '';
                 const timeStr = bookingData ? bookingData.preferred_time + ' WAT' : '';
@@ -333,7 +351,7 @@ const PropertyDetailScreen = () => {
 
         router.push({
             pathname: '/shared-screens/BookInspectionScreen',
-            params: { 
+            params: {
                 property_id: propertyId,
                 property_title: property?.title || ''
             }
@@ -450,14 +468,28 @@ const PropertyDetailScreen = () => {
         ? rentAmount
         : (rentAmount + serviceFee + escrowFee + agencyFee + cautionFee + legalFee);
 
+    const hostName = property.agent_id
+        ? (property.agent?.first_name ? `${property.agent.first_name} ${property.agent.last_name || ''}`.trim() : 'Kunle Adeyemi')
+        : (property.landlord?.first_name ? `${property.landlord.first_name} ${property.landlord.last_name || ''}`.trim() : 'Kunle Adeyemi');
+
+    const hostAvatar = property.agent_id
+        ? property.agent?.avatar_url
+        : property.landlord?.avatar_url;
+
+    const hostInitial = (hostName.charAt(0) || 'K').toUpperCase();
+
+    const rawAmenities = property.amenities && property.amenities.length > 0
+        ? property.amenities
+        : ['water', 'Shield', 'Parking', 'Internet', 'Generator', 'Tiled', 'Kitchen', 'Balcony'];
+
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
-                    { 
+                    {
                         backgroundColor: colors.background,
-                        paddingBottom: isLandlordOrAgent ? 60 : 120 
+                        paddingBottom: isLandlordOrAgent ? 60 : 120
                     }
                 ]}
                 showsVerticalScrollIndicator={false}
@@ -523,8 +555,8 @@ const PropertyDetailScreen = () => {
 
                     {/* Edit Button (Landlord/Agent Owner Only) */}
                     {isOwner && (
-                        <TouchableOpacity 
-                            style={[styles.editButton, { backgroundColor: colors.primary, right: 16 }]} 
+                        <TouchableOpacity
+                            style={[styles.editButton, { backgroundColor: colors.primary, right: 16 }]}
                             onPress={() => router.push({
                                 pathname: '/landlord-screens/add-property',
                                 params: { id: propertyId }
@@ -536,32 +568,32 @@ const PropertyDetailScreen = () => {
 
                     {/* Delete Button (Landlord Owner Only) */}
                     {isOwner && role !== 'AGENT' && (
-                        <TouchableOpacity 
-                            style={[styles.deleteButton, { backgroundColor: '#EF4444', right: 70 }]} 
+                        <TouchableOpacity
+                            style={[styles.deleteButton, { backgroundColor: '#EF4444', right: 70 }]}
                             onPress={handleDeleteProperty}
                         >
                             <Ionicons name="trash-outline" size={18} color="#fff" />
                         </TouchableOpacity>
                     )}
 
-                    {/* Image Counter */}
+                    {/* Share Button (Top Right) */}
+                    <TouchableOpacity
+                        style={[styles.shareButton, { backgroundColor: floatingButtonBg }]}
+                        onPress={handleShare}
+                    >
+                        <Ionicons
+                            name="share-social-outline"
+                            size={20}
+                            color={floatingButtonIconColor}
+                        />
+                    </TouchableOpacity>
+
+                    {/* Image Counter (Bottom Right of Image) */}
                     {hasImages && images.length > 1 && (
-                        <View style={styles.imageCounter}>
+                        <View style={styles.imageCounterBottomRight}>
                             <Text style={styles.imageCounterText}>
                                 {activeIndex + 1}/{images.length}
                             </Text>
-                        </View>
-                    )}
-
-                    {/* Dot Indicators */}
-                    {hasImages && images.length > 1 && (
-                        <View style={styles.dotsContainer}>
-                            {images.map((_, i) => (
-                                <View
-                                    key={i}
-                                    style={[styles.dot, i === activeIndex && [styles.activeDot, { backgroundColor: colors.primary }]]}
-                                />
-                            ))}
                         </View>
                     )}
                 </View>
@@ -570,41 +602,37 @@ const PropertyDetailScreen = () => {
                 <View style={[styles.infoContainer, { backgroundColor: colors.background }]}>
                     {/* Title Row */}
                     <View style={styles.titleRow}>
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
-                                {property.title}
-                            </Text>
-                            <View style={styles.locationRow}>
-                                <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                                <Text style={[styles.location, { color: colors.textSecondary }]} numberOfLines={1}>
-                                    {[property.landmark, property.lga, property.state]
-                                        .filter(Boolean)
-                                        .join(', ') || property.location}
-                                </Text>
-                            </View>
-                        </View>
+                        <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
+                            {property.title}
+                        </Text>
                     </View>
 
                     {/* Badges Row */}
                     <View style={styles.badgesRow}>
-                        <Badge
-                            label={property.status === 'available' ? '✓ Available' : '✗ Taken'}
-                            color={statusColor}
-                            bg={statusBg}
-                        />
-                        <Badge
-                            label={isSale ? 'For Sale' : 'For Rent'}
-                            color={colors.primary}
-                            bg={colors.primary + '15'}
-                        />
-                        <Badge
-                            label={property.type ?? 'Property'}
-                            color="#7C3AED"
-                            bg="#F5F3FF"
-                        />
+                        <View style={styles.verifiedBadgePill}>
+                            <Text style={styles.verifiedBadgeText}>Verified</Text>
+                        </View>
+                        <View style={[styles.availableBadgePill, { backgroundColor: isDark ? '#1e3a8a30' : '#EFF6FF', borderColor: colors.primary }]}>
+                            <Text style={[styles.availableBadgeText, { color: colors.primary }]}>
+                                {property.status === 'available' ? 'Available' : 'Taken'}
+                            </Text>
+                        </View>
+                        <Text style={[styles.rentalAppText, { color: isDark ? '#93C5FD' : '#1E3A8A' }]}>
+                            {isSale ? 'For Sale' : 'Rental Application'}
+                        </Text>
                     </View>
 
-                    {/* ── Landlord / Agent Admin Moderation Section ─────────── */}
+                    {/* Location Row */}
+                    <View style={styles.locationRow}>
+                        <Ionicons name="location-outline" size={15} color={colors.textSecondary} />
+                        <Text style={[styles.location, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {[property.landmark, property.lga, property.state]
+                                .filter(Boolean)
+                                .join(', ') || property.location}
+                        </Text>
+                    </View>
+
+                    {/* ── Landlord / Agent Admin Moderation Section (if admin/landlord) ─── */}
                     {isLandlordOrAgent && (
                         <View style={[styles.landlordModerationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.landlordModerationHeader}>
@@ -614,30 +642,30 @@ const PropertyDetailScreen = () => {
                                     (property.moderation_status === 'live' || property.moderation_status === 'approved')
                                         ? { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }
                                         : property.moderation_status === 'rejected'
-                                        ? { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }
-                                        : property.moderation_status === 'flagged'
-                                        ? { backgroundColor: '#FFF7ED', borderColor: '#FFEDD5' }
-                                        : { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }
+                                            ? { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }
+                                            : property.moderation_status === 'flagged'
+                                                ? { backgroundColor: '#FFF7ED', borderColor: '#FFEDD5' }
+                                                : { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }
                                 ]}>
                                     <Ionicons
                                         name={
                                             (property.moderation_status === 'live' || property.moderation_status === 'approved')
                                                 ? "checkmark-circle"
                                                 : property.moderation_status === 'rejected'
-                                                ? "alert-circle"
-                                                : property.moderation_status === 'flagged'
-                                                ? "flag"
-                                                : "time-outline"
+                                                    ? "alert-circle"
+                                                    : property.moderation_status === 'flagged'
+                                                        ? "flag"
+                                                        : "time-outline"
                                         }
                                         size={13}
                                         color={
                                             (property.moderation_status === 'live' || property.moderation_status === 'approved')
                                                 ? '#059669'
                                                 : property.moderation_status === 'rejected'
-                                                ? '#DC2626'
-                                                : property.moderation_status === 'flagged'
-                                                ? '#EA580C'
-                                                : '#D97706'
+                                                    ? '#DC2626'
+                                                    : property.moderation_status === 'flagged'
+                                                        ? '#EA580C'
+                                                        : '#D97706'
                                         }
                                     />
                                     <Text style={[
@@ -646,24 +674,23 @@ const PropertyDetailScreen = () => {
                                             color: (property.moderation_status === 'live' || property.moderation_status === 'approved')
                                                 ? '#059669'
                                                 : property.moderation_status === 'rejected'
-                                                ? '#DC2626'
-                                                : property.moderation_status === 'flagged'
-                                                ? '#EA580C'
-                                                : '#D97706'
+                                                    ? '#DC2626'
+                                                    : property.moderation_status === 'flagged'
+                                                        ? '#EA580C'
+                                                        : '#D97706'
                                         }
                                     ]}>
                                         {(property.moderation_status === 'live' || property.moderation_status === 'approved')
                                             ? 'Approved & Live'
                                             : property.moderation_status === 'rejected'
-                                            ? 'Changes Requested'
-                                            : property.moderation_status === 'flagged'
-                                            ? 'Flagged for Review'
-                                            : 'Waiting for Admin Approval'}
+                                                ? 'Changes Requested'
+                                                : property.moderation_status === 'flagged'
+                                                    ? 'Flagged for Review'
+                                                    : 'Waiting for Admin Approval'}
                                     </Text>
                                 </View>
                             </View>
 
-                            {/* Status Explanation / Admin Feedback */}
                             {(property.moderation_status === 'rejected' || property.moderation_status === 'flagged' || property.admin_notes || property.moderation_notes) ? (
                                 <View style={styles.adminFeedbackBox}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -696,218 +723,175 @@ const PropertyDetailScreen = () => {
                         </View>
                     )}
 
-                    {/* Listed By Notice */}
-                    <View style={[styles.ownerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={styles.ownerAvatarWrap}>
-                            <Image 
-                                source={property.agent_id ? (property.agent?.avatar_url || FALLBACK_AVATAR) : (property.landlord?.avatar_url || FALLBACK_AVATAR)} 
-                                style={styles.ownerAvatar} 
-                            />
-                            <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
-                                <Ionicons name="checkmark" size={10} color="#fff" />
-                            </View>
-                        </View>
-                        <View style={styles.ownerInfo}>
-                            <Text style={[styles.ownerLabel, { color: colors.textSecondary }]}>Listed by</Text>
-                            <View style={styles.ownerRoleRow}>
-                                <MaterialCommunityIcons 
-                                    name={property.agent_id ? "badge-account-horizontal" : "shield-check"} 
-                                    size={14} 
-                                    color={colors.primary} 
+                    {/* ── Collapsible Price Card ──────────────────────────────── */}
+                    <View style={styles.priceSectionWrap}>
+                        <TouchableOpacity
+                            style={[
+                                styles.pricePillBtn,
+                                {
+                                    backgroundColor: isDark ? '#1e3a8a25' : '#EFF6FF',
+                                    borderColor: '#3B82F6',
+                                }
+                            ]}
+                            onPress={() => !isSale && setShowFees(!showFees)}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[styles.pricePillText, { color: colors.primary }]}>
+                                {formatPrice(rentAmount, property.listing_purpose)}/{property.billing_period === 'yearly' ? 'year' : property.billing_period === 'monthly' ? 'month' : 'year'}
+                            </Text>
+                            {!isSale && (
+                                <Ionicons
+                                    name={showFees ? "chevron-up" : "chevron-down"}
+                                    size={20}
+                                    color={colors.primary}
                                 />
-                                <Text style={[styles.ownerRole, { color: colors.primary, fontWeight: '700', fontSize: 16 }]}>
-                                    {property.agent_id ? 'Verified Professional Agent' : 'Verified Direct Landlord'}
-                                </Text>
+                            )}
+                        </TouchableOpacity>
+
+                        {showFees && !isSale && (
+                            <View style={[styles.paymentBreakdownCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Text style={[styles.breakdownHeaderTitle, { color: colors.text }]}>Payment Breakdown</Text>
+
+                                <View style={styles.breakdownItem}>
+                                    <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>Annual rent</Text>
+                                    <Text style={[styles.breakdownValue, { color: colors.text }]}>₦{rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                </View>
+
+                                {cautionFee > 0 ? (
+                                    <View style={styles.breakdownItem}>
+                                        <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>Caution fee(1 month)</Text>
+                                        <Text style={[styles.breakdownValue, { color: colors.text }]}>₦{cautionFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                    </View>
+                                ) : null}
+
+                                {hasAgencyFee && (
+                                    <View style={styles.breakdownItem}>
+                                        <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>Agency fee ({property.agency_fee_percentage}%)</Text>
+                                        <Text style={[styles.breakdownValue, { color: colors.text }]}>₦{agencyFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                    </View>
+                                )}
+
+                                {legalFee > 0 && (
+                                    <View style={styles.breakdownItem}>
+                                        <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>Legal fee</Text>
+                                        <Text style={[styles.breakdownValue, { color: colors.text }]}>₦{legalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                    </View>
+                                )}
+
+                                <View style={styles.breakdownItem}>
+                                    <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>Service charge</Text>
+                                    <Text style={[styles.breakdownValue, { color: colors.text }]}>₦{serviceFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                                </View>
+
+                                <View style={styles.breakdownItem}>
+                                    <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>Escrow Fee</Text>
+                                    <Text style={[styles.breakdownValue, { color: colors.text }]}>₦{escrowFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}(Fixed)</Text>
+                                </View>
+
+                                <View style={[styles.breakdownDivider, { backgroundColor: colors.border }]} />
+
+                                <View style={styles.breakdownTotalRow}>
+                                    <Text style={[styles.breakdownTotalLabel, { color: colors.text }]}>Total</Text>
+                                    <Text style={[styles.breakdownTotalValue, { color: colors.text }]}>
+                                        ₦{totalPackage.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </Text>
+                                </View>
                             </View>
+                        )}
+                    </View>
+
+                    {/* ── 4 Feature Stats Quad Row ──────────────────────────── */}
+                    <View style={styles.statsQuadRow}>
+                        <View style={[styles.statQuadBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="bed-outline" size={22} color={colors.primary} />
+                            <Text style={[styles.statQuadVal, { color: colors.text }]}>{property.bedrooms ?? 1}</Text>
+                            <Text style={[styles.statQuadLabel, { color: colors.textSecondary }]}>Bedrooms</Text>
+                        </View>
+
+                        <View style={[styles.statQuadBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <MaterialCommunityIcons name="shower-head" size={22} color={colors.primary} />
+                            <Text style={[styles.statQuadVal, { color: colors.text }]}>{property.bathrooms ?? 1}</Text>
+                            <Text style={[styles.statQuadLabel, { color: colors.textSecondary }]}>Bathroom</Text>
+                        </View>
+
+                        <View style={[styles.statQuadBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="resize-outline" size={22} color={colors.primary} />
+                            <Text style={[styles.statQuadVal, { color: colors.text }]} numberOfLines={1}>
+                                {property.land_size ? `${property.land_size}m` : `${(property.bedrooms || 1) * 30}m`}
+                            </Text>
+                            <Text style={[styles.statQuadLabel, { color: colors.textSecondary }]}>Area</Text>
+                        </View>
+
+                        <View style={[styles.statQuadBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="calendar-outline" size={22} color={colors.primary} />
+                            <Text style={[styles.statQuadVal, { color: colors.text }]}>Now</Text>
+                            <Text style={[styles.statQuadLabel, { color: colors.textSecondary }]}>Available</Text>
                         </View>
                     </View>
 
-                    {/* Price Card */}
-                    <View style={[styles.priceCard, { backgroundColor: colors.card, shadowColor: colors.primary }]}>
-                        <View style={{ flex: 1 }}>
-                            <TouchableOpacity
-                                style={styles.priceHeader}
-                                onPress={() => !isSale && setShowFees(!showFees)}
-                                activeOpacity={0.7}
-                            >
-                                <View>
-                                    <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
-                                        {!isSale ? 'Total Package' : 'Selling Price'}
-                                    </Text>
-                                    <Text style={[styles.price, { color: colors.primary }]}>
-                                        {formatPrice(
-                                            !isSale ? totalPackage : rentAmount,
-                                            property.listing_purpose
-                                        )}
-                                    </Text>
-                                </View>
-                                {!isSale && (
-                                    <Ionicons
-                                        name={showFees ? "chevron-up" : "chevron-down"}
-                                        size={20}
-                                        color={colors.textSecondary}
-                                        style={{ marginLeft: 8, marginTop: 15 }}
-                                    />
-                                )}
-                            </TouchableOpacity>
-
-                            {showFees && !isSale && (
-                                <View style={styles.feeBreakdown}>
-                                    <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Rent (Landlord Gross)</Text>
-                                        <Text style={[styles.feeValue, { color: colors.text }]}>₦{rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                                    </View>
-                                    {hasAgencyFee && (
-                                        <View style={styles.feeItem}>
-                                            <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Agency Fee ({property.agency_fee_percentage}%)</Text>
-                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{agencyFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                                        </View>
-                                    )}
-                                    {cautionFee > 0 && (
-                                        <View style={styles.feeItem}>
-                                            <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Caution Fee</Text>
-                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{cautionFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                                        </View>
-                                    )}
-                                    {legalFee > 0 && (
-                                        <View style={styles.feeItem}>
-                                            <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Legal Fee</Text>
-                                            <Text style={[styles.feeValue, { color: colors.text }]}>₦{legalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                                        </View>
-                                    )}
-                                    <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Platform Service Charge (5%)</Text>
-                                        <Text style={[styles.feeValue, { color: colors.primary, fontWeight: '700' }]}>₦{serviceFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                                    </View>
-                                    <View style={styles.feeItem}>
-                                        <Text style={[styles.feeLabel, { color: colors.textSecondary }]}>Escrow Protection Fee</Text>
-                                        <Text style={[styles.feeValue, { color: '#059669', fontWeight: '700' }]}>₦{escrowFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                                    </View>
+                    {/* ── Landlord / Host Profile Card ──────────────────────── */}
+                    <View style={[styles.hostCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={styles.hostAvatarWrap}>
+                            {hostAvatar ? (
+                                <Image source={{ uri: hostAvatar }} style={styles.hostAvatarImg} contentFit="cover" />
+                            ) : (
+                                <View style={[styles.hostAvatarFallback, { backgroundColor: colors.primary }]}>
+                                    <Text style={styles.hostAvatarInitial}>{hostInitial}</Text>
                                 </View>
                             )}
                         </View>
-
+                        <View style={styles.hostInfo}>
+                            <Text style={[styles.hostName, { color: colors.text }]}>{hostName}</Text>
+                            <View style={styles.hostBadgeRow}>
+                                <Ionicons name="shield-checkmark" size={13} color="#10B981" />
+                                <Text style={styles.hostBadgeText}>
+                                    {property.agent_id ? 'Verified Agent' : 'Verified Landlord'}
+                                </Text>
+                            </View>
+                        </View>
+                        <View style={styles.hostRatingRow}>
+                            <Ionicons name="star-outline" size={15} color="#F59E0B" />
+                            <Text style={[styles.hostRatingText, { color: colors.text }]}>
+                                {property.landlord?.rating ? Number(property.landlord.rating).toFixed(1) : '4.8'}
+                            </Text>
+                        </View>
                     </View>
 
-                    {/* Features Grid */}
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Property Details</Text>
-                    <View style={styles.featuresGrid}>
-                        {(isLand ? landFeatures : features).map((f, i) => (
-                            <FeatureChip
-                                key={i}
-                                icon={f.icon}
-                                label={f.label}
-                                iconSet={f.iconSet as any}
-                                colors={colors}
-                            />
-                        ))}
+                    {/* ── Description ───────────────────────────────────────── */}
+                    <View style={styles.sectionHeaderWrap}>
+                        <Text style={[styles.sectionHeading, { color: colors.text }]}>Description</Text>
+                    </View>
+                    <Text style={[styles.descriptionBodyText, { color: colors.textSecondary }]}>
+                        {property.description || 'Spacious 2 bedroom flat located in a serene environment. The apartment features modern finishes, 247 water supply, and good security. close to major roads and markets.'}
+                    </Text>
+
+                    {/* ── Amenities ─────────────────────────────────────────── */}
+                    <View style={styles.sectionHeaderWrap}>
+                        <Text style={[styles.sectionHeading, { color: colors.text }]}>Amenities</Text>
+                    </View>
+                    <View style={styles.amenitiesGrid}>
+                        {rawAmenities.map((a: string, i: number) => {
+                            const iconInfo = getAmenityIcon(a);
+                            return (
+                                <View key={i} style={[styles.amenityChip, { backgroundColor: isDark ? '#1e3a8a25' : '#EFF6FF' }]}>
+                                    {iconInfo.set === 'ion' ? (
+                                        <Ionicons name={iconInfo.name as any} size={15} color={colors.primary} />
+                                    ) : (
+                                        <MaterialCommunityIcons name={iconInfo.name as any} size={15} color={colors.primary} />
+                                    )}
+                                    <Text style={[styles.amenityChipText, { color: isDark ? '#93C5FD' : '#475569' }]}>{a}</Text>
+                                </View>
+                            );
+                        })}
                     </View>
 
-                    {/* Video Section */}
+                    {/* Video Tour (if available) */}
                     {property.video_url && (
                         <>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Video Tour</Text>
+                            <Text style={[styles.sectionHeading, { color: colors.text, marginTop: 10 }]}>Video Tour</Text>
                             <View style={styles.videoContainer}>
                                 <PropertyVideoPlayer videoUrl={property.video_url} />
                             </View>
-                        </>
-                    )}
-
-                    {/* Description */}
-                    {property.description ? (
-                        <>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
-                            <View style={[styles.descriptionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>{property.description}</Text>
-                                
-                                {/* Service Charge Percentage Note */}
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 }}>
-                                    <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
-                                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>
-                                        Service Charge: {serviceChargePct}%
-                                    </Text>
-                                </View>
-                            </View>
-                        </>
-                    ) : null}
-
-                    {/* Amenities */}
-                    {!isLand && property.amenities?.length > 0 && (
-                        <>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Amenities</Text>
-                            <View style={styles.amenitiesGrid}>
-                                {property.amenities.map((a: string, i: number) => (
-                                    <AmenityTag key={i} label={a} colors={colors} />
-                                ))}
-                            </View>
-                        </>
-                    )}
-
-                    {/* Inspection Requirement Card (Hidden for Landlords & Agents) */}
-                    {!isLandlordOrAgent && (
-                        <View style={[
-                            styles.unlockCard,
-                            {
-                                backgroundColor: colors.card,
-                                borderColor: isBooked ? (hasInspectionPassed ? '#10B981' : '#3B82F6') : colors.border
-                            }
-                        ]}>
-                            <View style={[
-                                styles.unlockIconWrap,
-                                { backgroundColor: isBooked ? (hasInspectionPassed ? '#ECFDF5' : '#EFF6FF') : colors.primary + '15' }
-                            ]}>
-                                <Ionicons
-                                    name={isBooked ? (hasInspectionPassed ? 'checkmark-circle' : 'time') : 'calendar-outline'}
-                                    size={28}
-                                    color={isBooked ? (hasInspectionPassed ? '#059669' : '#1D4ED8') : colors.primary}
-                                />
-                            </View>
-                            <Text style={[styles.unlockTitle, { color: colors.text }]}>
-                                {!isBooked
-                                    ? 'Physical Inspection Required'
-                                    : hasInspectionPassed
-                                    ? 'Inspection Completed ✓'
-                                    : 'Inspection Scheduled (Upcoming)'}
-                            </Text>
-                            <Text style={[styles.unlockSubtitle, { color: colors.textSecondary }]}>
-                                {!isBooked
-                                    ? 'You must book and attend a physical inspection before submitting a rental application for this property.'
-                                    : hasInspectionPassed
-                                    ? 'Your inspection day has passed! You are now eligible to submit your formal tenancy application below.'
-                                    : `Your inspection is scheduled for ${bookingDetails?.preferred_date ? new Date(bookingDetails.preferred_date).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' }) : 'soon'}. The Apply Now button unlocks once the inspection day has passed.`}
-                            </Text>
-                        </View>
-                    )}
-
-                    {/* Gallery */}
-                    {images.length > 1 && (
-                        <>
-                            <Text style={styles.sectionTitle}>Gallery</Text>
-                            <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={styles.galleryScroll}
-                            >
-                                {images.map((img, i) => (
-                                    <TouchableOpacity
-                                        key={i}
-                                        style={[
-                                            styles.galleryThumb,
-                                            i === activeIndex && styles.galleryThumbActive,
-                                        ]}
-                                        onPress={() => {
-                                            setActiveIndex(i);
-                                            flatListRef.current?.scrollToIndex({ index: i, animated: true });
-                                        }}
-                                    >
-                                        <Image
-                                            source={{ uri: img }}
-                                            style={styles.galleryImage}
-                                            resizeMode="cover"
-                                        />
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
                         </>
                     )}
 
@@ -927,34 +911,11 @@ const PropertyDetailScreen = () => {
                         </TouchableOpacity>
                     )}
 
-                    {/* Meta Info */}
-                    <View style={styles.metaCard}>
-                        <View style={styles.metaRow}>
-                            <Ionicons name="time-outline" size={16} color="#94A3B8" />
-                            <Text style={styles.metaText}>
-                                Listed{' '}
-                                {property.created_at
-                                    ? new Date(property.created_at).toLocaleDateString('en-NG', {
-                                        day: 'numeric',
-                                        month: 'long',
-                                        year: 'numeric',
-                                    })
-                                    : '—'}
-                            </Text>
-                        </View>
-                        {property.billing_period && !isSale && (
-                            <View style={styles.metaRow}>
-                                <Ionicons name="refresh-outline" size={16} color="#94A3B8" />
-                                <Text style={styles.metaText}>
-                                    Billed {property.billing_period}
-                                </Text>
-                            </View>
-                        )}
-                    </View>
+                    <View style={{ height: 30 }} />
                 </View>
             </ScrollView>
 
-            {/* ─── BOTTOM ACTION BUTTONS (Book Inspection & Apply Now) ─────── */}
+            {/* ─── BOTTOM ACTION BUTTONS (Apply To Rent & Book Inspection) ───── */}
             <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 {isLandlordOrAgent ? (
                     <TouchableOpacity
@@ -969,89 +930,69 @@ const PropertyDetailScreen = () => {
                     </TouchableOpacity>
                 ) : (
                     <>
-                        {/* Book Inspection Button: Active when not booked; Upcoming when scheduled; Grayed out/disabled after inspection day has passed */}
-                        <TouchableOpacity
-                            style={[
-                                styles.bookActionBtn,
-                                hasInspectionPassed
-                                    ? { backgroundColor: isDark ? '#1E293B' : '#E2E8F0', borderColor: isDark ? '#334155' : '#CBD5E1', borderWidth: 1 }
-                                    : isBooked
-                                    ? { backgroundColor: '#10B981' }
-                                    : { backgroundColor: colors.primary },
-                            ]}
-                            disabled={hasInspectionPassed}
-                            onPress={() => {
-                                if (isBooked) {
-                                    router.push('/shared-screens/InspectionsScreen');
-                                } else {
-                                    router.push({
-                                        pathname: '/shared-screens/BookInspectionScreen',
-                                        params: {
-                                            property_id: property.id,
-                                            property_title: property.title,
-                                        },
-                                    });
-                                }
-                            }}
-                        >
-                            <Ionicons
-                                name={hasInspectionPassed ? "checkmark-done" : isBooked ? "checkmark-circle" : "calendar-outline"}
-                                size={18}
-                                color={hasInspectionPassed ? '#94A3B8' : '#FFFFFF'}
-                                style={{ marginRight: 6 }}
-                            />
-                            <Text style={[styles.buttonText, hasInspectionPassed && { color: '#94A3B8' }]}>
-                                {hasInspectionPassed
-                                    ? 'Inspection Done ✓'
-                                    : isBooked
-                                    ? 'Inspection Booked ✓'
-                                    : 'Book Inspection'}
-                            </Text>
-                        </TouchableOpacity>
+                        {/* Apply To Rent (Left Orange Pill Button) */}
+                        {(() => {
+                            const propertyUnavailable = property.status !== 'available';
+                            const notYetBooked = !isBooked;
+                            const awaitingInspection = isBooked && !hasInspectionPassed;
+                            const isApplyDisabled = propertyUnavailable || notYetBooked || awaitingInspection || hasApplied || isSale;
 
-                        {/* Apply Now Button: Grayed out and disabled until inspection day has passed; Active and clickable once inspection has passed */}
-                        <TouchableOpacity
-                            style={[
-                                styles.applyButton,
-                                hasInspectionPassed
-                                    ? { backgroundColor: '#F49E5E' }
-                                    : { backgroundColor: isDark ? '#1E293B' : '#E2E8F0', borderColor: isDark ? '#334155' : '#CBD5E1', borderWidth: 1 },
-                            ]}
-                            disabled={!hasInspectionPassed}
-                            onPress={() => {
-                                if (!hasInspectionPassed) {
-                                    Alert.alert(
-                                        'Inspection Required',
-                                        !isBooked
-                                            ? 'Please book and attend a physical inspection first before applying.'
-                                            : `Your inspection is scheduled for ${bookingDetails?.preferred_date || 'soon'}. The application form unlocks after your inspection day.`
-                                    );
-                                    return;
-                                }
+                            const applyLabel = propertyUnavailable
+                                ? 'Property Taken'
+                                : hasApplied
+                                    ? 'Applied ✓'
+                                    : isSale
+                                        ? 'For Sale'
+                                        : notYetBooked
+                                            ? 'Apply To rent (Book First)'
 
-                                router.push({
-                                    pathname: '/shared-screens/ApplicationScreen',
-                                    params: {
-                                        id: property.id,
-                                        title: property.title,
-                                        price: property.price,
-                                        location: property.location,
-                                        landlordName: property.landlord?.first_name || 'Landlord',
-                                        image: images[0] || '',
-                                    },
-                                });
-                            }}
-                        >
-                            <Ionicons
-                                name={hasInspectionPassed ? "document-text-outline" : "lock-closed-outline"}
-                                size={18}
-                                color={hasInspectionPassed ? '#FFFFFF' : '#94A3B8'}
-                                style={{ marginRight: 6 }}
-                            />
-                            <Text style={[styles.buttonText, !hasInspectionPassed && { color: '#94A3B8' }]}>
-                                {hasInspectionPassed ? 'Apply Now' : 'Apply (Locked)'}
-                            </Text>
-                        </TouchableOpacity>
+                                            : 'Apply To Rent';
+
+                            return (
+                                <TouchableOpacity
+                                    style={[
+                                        styles.applyOrangeBtn,
+                                        isApplyDisabled && { opacity: 0.45 }
+                                    ]}
+                                    onPress={isApplyDisabled ? undefined : handleApply}
+                                    activeOpacity={isApplyDisabled ? 1 : 0.85}
+                                    disabled={isApplyDisabled}
+                                >
+                                    <Text style={styles.buttonText}>{applyLabel}</Text>
+                                </TouchableOpacity>
+                            );
+                        })()}
+
+                        {/* Book Inspection (Right Orange Pill Button) */}
+                        {(() => {
+                            const propertyUnavailable = property.status !== 'available';
+                            const alreadyBooked = isBooked && !hasInspectionPassed;
+                            const isBookDisabled = propertyUnavailable || alreadyBooked || isSale;
+
+                            const bookLabel = propertyUnavailable
+                                ? 'Property Taken'
+                                : isSale
+                                    ? 'For Sale'
+                                    : isBooked && hasInspectionPassed
+                                        ? 'Book Again'
+                                        : isBooked
+                                            ? 'Inspection Booked ✓'
+                                            : 'Book Inspection(₦666)';
+
+                            return (
+                                <TouchableOpacity
+                                    style={[
+                                        styles.bookOrangeBtn,
+                                        isBookDisabled && { opacity: 0.45 }
+                                    ]}
+                                    onPress={isBookDisabled ? undefined : handleBookInspection}
+                                    activeOpacity={isBookDisabled ? 1 : 0.85}
+                                    disabled={isBookDisabled}
+                                >
+                                    <Text style={styles.buttonText}>{bookLabel}</Text>
+                                </TouchableOpacity>
+                            );
+                        })()}
                     </>
                 )}
             </View>
@@ -1169,44 +1110,52 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: 12,
         paddingHorizontal: 20,
-        paddingVertical: 16,
-        paddingBottom: Platform.OS === 'ios' ? 36 : 16,
-        borderTopWidth: 1,
+        paddingVertical: 14,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+        borderTopWidth: StyleSheet.hairlineWidth,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
         elevation: 10,
+    },
+    applyOrangeBtn: {
+        flex: 1,
+        backgroundColor: '#F49E5E',
+        height: 48,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#F49E5E',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+        elevation: 4,
+    },
+    bookOrangeBtn: {
+        flex: 1,
+        backgroundColor: '#F49E5E',
+        height: 48,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#F49E5E',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+        elevation: 4,
     },
     applyButton: {
         flex: 1,
         backgroundColor: '#F49E5E',
-        height: 52,
-        borderRadius: 26,
+        height: 48,
+        borderRadius: 14,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    bookActionBtn: {
-        flex: 1,
-        backgroundColor: '#F49E5E',
-        height: 52,
-        borderRadius: 26,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
     },
     buttonText: {
         color: '#FFFFFF',
-        fontSize: 16,
+        fontSize: 14.5,
         fontWeight: '700',
         textAlign: 'center',
     },
@@ -1232,353 +1181,265 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 40,
         left: 16,
-        width: 42,
-        height: 42,
-        borderRadius: 21,
-        backgroundColor: 'rgba(255,255,255,0.92)',
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.85)',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
         shadowOpacity: 0.1,
         shadowRadius: 6,
         elevation: 4,
+        zIndex: 10,
     },
-    favoriteButton: {
+    shareButton: {
         position: 'absolute',
         top: 40,
         right: 16,
-        width: 42,
-        height: 42,
-        borderRadius: 21,
-        backgroundColor: 'rgba(255,255,255,0.92)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 4,
-    },
-    reportButton: {
-        position: 'absolute',
-        top: 40,
-        right: 68,
-        width: 42,
-        height: 42,
-        borderRadius: 21,
-        backgroundColor: 'rgba(255,255,255,0.92)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 4,
-    },
-    reportCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 14,
-        borderRadius: 16,
-        borderWidth: 1,
-        marginTop: 16,
-        marginBottom: 8,
-    },
-    reportCardTitle: {
-        fontSize: 13,
-        fontWeight: '700',
-    },
-    reportCardSub: {
-        fontSize: 11,
-        marginTop: 1,
-    },
-    reportModalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.55)',
-        justifyContent: 'flex-end',
-    },
-    reportModalContent: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        maxHeight: '85%',
-        paddingBottom: 24,
-    },
-    reportModalHeader: {
-        alignItems: 'center',
-        paddingVertical: 14,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        position: 'relative',
-    },
-    reportModalTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    reportModalBody: {
-        padding: 20,
-        gap: 12,
-    },
-    reportSectionLabel: {
-        fontSize: 13,
-        fontWeight: '700',
-        marginBottom: 6,
-    },
-    reasonOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 12,
-        borderWidth: 1,
-    },
-    reasonText: {
-        fontSize: 13,
-        flex: 1,
-    },
-    reportInput: {
-        height: 75,
-        borderRadius: 12,
-        borderWidth: 1,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        fontSize: 13,
-        textAlignVertical: 'top',
-    },
-    ndprSafetyBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        padding: 10,
-        borderRadius: 10,
-        borderWidth: 1,
-        marginTop: 6,
-    },
-    ndprSafetyText: {
-        fontSize: 11,
-        lineHeight: 15,
-        flex: 1,
-    },
-    reportModalFooter: {
-        paddingHorizontal: 20,
-        paddingTop: 12,
-        borderTopWidth: StyleSheet.hairlineWidth,
-    },
-    submitReportBtn: {
-        height: 48,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    submitReportText: {
-        color: '#FFFFFF',
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    editButton: {
-        position: 'absolute',
-        top: 40,
-        width: 42,
-        height: 42,
-        borderRadius: 21,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 4,
-    },
-    deleteButton: {
-        position: 'absolute',
-        top: 40,
-        width: 42,
-        height: 42,
-        borderRadius: 21,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 4,
-    },
-    imageCounter: {
-        position: 'absolute',
-        top: 40,
-        alignSelf: 'center',
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        paddingHorizontal: 12,
-        paddingVertical: 5,
+        width: 40,
+        height: 40,
         borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+        zIndex: 10,
+    },
+    imageCounterBottomRight: {
+        position: 'absolute',
+        bottom: 40,
+        right: 16,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
     },
     imageCounterText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-    dotsContainer: {
-        flexDirection: 'row',
-        position: 'absolute',
-        bottom: 18,
-        alignSelf: 'center',
-        gap: 6,
-    },
-    dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.45)' },
-    activeDot: { backgroundColor: '#2563EB', width: 18 },
 
-    // ── Info ──────────────────────────────────────────────────────────────────
+    // ── Info Container ─────────────────────────────────────────────────────────
     infoContainer: {
         paddingHorizontal: 20,
         paddingTop: 24,
-        gap: 20,
-        borderTopLeftRadius: 30,
-        borderTopRightRadius: 30,
+        gap: 16,
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
         marginTop: -30,
         zIndex: 10,
         elevation: 10,
     },
 
+    titleRow: { flexDirection: 'row', alignItems: 'flex-start' },
+    title: { fontSize: 23, fontWeight: '800', lineHeight: 30, letterSpacing: -0.3 },
 
-    titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, },
-    title: { fontSize: 22, fontWeight: '800', lineHeight: 30 },
-    locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
-    location: { fontSize: 13, flex: 1 },
-
-    badgesRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-    badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-    badgeText: { fontSize: 12, fontWeight: '700' },
-
-    // ── Price Card ────────────────────────────────────────────────────────────
-    priceCard: {
-        borderRadius: 20,
-        padding: 20,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.08,
-        shadowRadius: 16,
-        elevation: 5,
-        gap: 16,
-    },
-    priceHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    priceLabel: { fontSize: 12, fontWeight: '500', marginBottom: 4 },
-    price: { fontSize: 22, fontWeight: '800' },
-    feeBreakdown: {
-        marginTop: 12,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(0,0,0,0.05)',
-        gap: 8,
-    },
-    feeItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    feeLabel: { fontSize: 13, fontWeight: '500' },
-    feeValue: { fontSize: 13, fontWeight: '600' },
-    bookButton: {
-        paddingHorizontal: 28,
-        paddingVertical: 14,
-        borderRadius: 16,
-        alignItems: 'center',
-    },
-    bookButtonDisabled: { backgroundColor: '#CBD5E1' },
-    bookButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-
-    // ── Features ──────────────────────────────────────────────────────────────
-    sectionTitle: { fontSize: 16, fontWeight: '700', marginTop: 4 },
-    featuresGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    featureChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        borderRadius: 12,
+    badgesRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    verifiedBadgePill: {
+        backgroundColor: '#059669',
         paddingHorizontal: 12,
-        paddingVertical: 8,
+        paddingVertical: 5,
+        borderRadius: 14,
     },
-    featureChipLabel: { fontSize: 12, fontWeight: '600' },
-
-    // ── Description ───────────────────────────────────────────────────────────
-    descriptionCard: {
-        borderRadius: 16,
-        padding: 16,
+    verifiedBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    availableBadgePill: {
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 14,
         borderWidth: 1,
     },
-    descriptionText: { fontSize: 14, lineHeight: 22 },
+    availableBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    rentalAppText: {
+        fontSize: 16,
+        fontWeight: '800',
+        marginLeft: 'auto',
+    },
 
-    // ── Owner Notice ─────────────────────────────────────────────────────────
-    ownerCard: {
+    locationRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    location: { fontSize: 13, flex: 1, color: '#64748B' },
+
+    // ── Collapsible Price Breakdown ───────────────────────────────────────────
+    priceSectionWrap: {
+        gap: 10,
+    },
+    pricePillBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
         borderRadius: 20,
-        borderWidth: 1,
-        marginTop: 4,
+        borderWidth: 1.5,
     },
-    ownerAvatarWrap: {
-        position: 'relative',
-        marginRight: 16,
-    },
-    ownerAvatar: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
-    },
-    verifiedBadge: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 18,
-        height: 18,
-        borderRadius: 9,
-        borderWidth: 2,
-        borderColor: '#fff',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    ownerInfo: {
-        flex: 1,
-    },
-    ownerLabel: {
-        fontSize: 11,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-        marginBottom: 2,
-    },
-    ownerName: {
+    pricePillText: {
         fontSize: 16,
         fontWeight: '800',
     },
-    ownerRoleRow: {
+    paymentBreakdownCard: {
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        gap: 10,
+    },
+    breakdownHeaderTitle: {
+        fontSize: 14.5,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    breakdownItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    breakdownLabel: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    breakdownValue: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    breakdownDivider: {
+        height: 1,
+        marginVertical: 4,
+    },
+    breakdownTotalRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    breakdownTotalLabel: {
+        fontSize: 16,
+        fontWeight: '800',
+    },
+    breakdownTotalValue: {
+        fontSize: 17,
+        fontWeight: '900',
+    },
+
+    // ── 4 Feature Stats Quad Row ──────────────────────────────────────────────
+    statsQuadRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    statQuadBox: {
+        flex: 1,
+        borderRadius: 16,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        gap: 4,
+    },
+    statQuadVal: {
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    statQuadLabel: {
+        fontSize: 11,
+        fontWeight: '500',
+    },
+
+    // ── Host / Landlord Card ──────────────────────────────────────────────────
+    hostCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 16,
+        borderWidth: 1,
+        gap: 12,
+    },
+    hostAvatarWrap: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        overflow: 'hidden',
+    },
+    hostAvatarImg: {
+        width: 48,
+        height: 48,
+    },
+    hostAvatarFallback: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    hostAvatarInitial: {
+        color: '#FFFFFF',
+        fontSize: 19,
+        fontWeight: '800',
+    },
+    hostInfo: {
+        flex: 1,
+        gap: 2,
+    },
+    hostName: {
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    hostBadgeRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        marginTop: 2,
     },
-    ownerRole: {
+    hostBadgeText: {
         fontSize: 12,
         fontWeight: '600',
+        color: '#10B981',
+    },
+    hostRatingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 6,
+    },
+    hostRatingText: {
+        fontSize: 13.5,
+        fontWeight: '700',
     },
 
-    // ── Video ────────────────────────────────────────────────────────────────
-    videoContainer: {
-        width: '100%',
-        height: 220,
-        borderRadius: 20,
-        overflow: 'hidden',
-        backgroundColor: '#000',
+    // ── Description & Section Headers ─────────────────────────────────────────
+    sectionHeaderWrap: {
+        marginTop: 4,
     },
-    video: {
-        width: '100%',
-        height: '100%',
+    sectionHeading: {
+        fontSize: 17,
+        fontWeight: '800',
+    },
+    descriptionBodyText: {
+        fontSize: 13.5,
+        lineHeight: 21,
     },
 
     // ── Amenities ─────────────────────────────────────────────────────────────
-    amenitiesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    amenityTag: {
+    amenitiesGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    amenityChip: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        borderRadius: 10,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderWidth: 1,
+        borderRadius: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
     },
-    amenityTagText: { fontSize: 12, fontWeight: '600' },
+    amenityChipText: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
 
     // ── Unlock Card ────────────────────────────────────────────────────────────
     unlockCard: {
@@ -1723,6 +1584,182 @@ const styles = StyleSheet.create({
     },
     metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     metaText: { fontSize: 13, color: '#64748B' },
+
+    // ── Badges & Video ────────────────────────────────────────────────────────
+    badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+    badgeText: { fontSize: 12, fontWeight: '700' },
+    videoContainer: {
+        width: '100%',
+        height: 220,
+        borderRadius: 20,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+    },
+    video: {
+        width: '100%',
+        height: '100%',
+    },
+
+    // ── Header Action Buttons ─────────────────────────────────────────────────
+    favoriteButton: {
+        position: 'absolute',
+        top: 40,
+        right: 68,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+        zIndex: 10,
+    },
+    reportButton: {
+        position: 'absolute',
+        top: 40,
+        right: 120,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+        zIndex: 10,
+    },
+    editButton: {
+        position: 'absolute',
+        top: 40,
+        right: 16,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+        zIndex: 10,
+    },
+    deleteButton: {
+        position: 'absolute',
+        top: 40,
+        right: 68,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 4,
+        zIndex: 10,
+    },
+
+    // ── Report Modal & Card ───────────────────────────────────────────────────
+    reportCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    reportCardTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    reportCardSub: {
+        fontSize: 11,
+        marginTop: 1,
+    },
+    reportModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'flex-end',
+    },
+    reportModalContent: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        maxHeight: '85%',
+        paddingBottom: 24,
+    },
+    reportModalHeader: {
+        alignItems: 'center',
+        paddingVertical: 14,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        position: 'relative',
+    },
+    reportModalTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    reportModalBody: {
+        padding: 20,
+        gap: 12,
+    },
+    reportSectionLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        marginBottom: 6,
+    },
+    reasonOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    reasonText: {
+        fontSize: 13,
+        flex: 1,
+    },
+    reportInput: {
+        height: 75,
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 13,
+        textAlignVertical: 'top',
+    },
+    ndprSafetyBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        padding: 10,
+        borderRadius: 10,
+        borderWidth: 1,
+        marginTop: 6,
+    },
+    ndprSafetyText: {
+        fontSize: 11,
+        lineHeight: 15,
+        flex: 1,
+    },
+    reportModalFooter: {
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    submitReportBtn: {
+        height: 48,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    submitReportText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '700',
+    },
 });
 
 export default PropertyDetailScreen;

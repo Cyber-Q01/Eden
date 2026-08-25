@@ -1,12 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
+import { decode } from 'base64-arraybuffer';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ThemedTextInput from '../ThemedTextInput';
 import { useTheme } from '../../context/ThemeContext';
 import { BiodataForm, ModalKeys } from '../../types/biodata';
 import { GENDER_OPTIONS } from '../../constants/biodataOptions';
 import { DropdownButton, FieldLabel, SectionTitle } from './BiodataFormElements';
+import { supabase } from '../../lib/supabase';
+
+const PROFILE_PICTURES_BUCKET = 'profile-pictures';
 
 type Props = {
     form: BiodataForm;
@@ -17,15 +23,61 @@ type Props = {
 
 const PersonalInfoStep = ({ form, updateForm, openModal, onShowDobPicker }: Props) => {
     const { colors, isDark } = useTheme();
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
     const pickProfilePhoto = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.5,
+            quality: 0.8,
             allowsEditing: true,
             aspect: [1, 1],
         });
-        if (!result.canceled) updateForm('profile_photo', result.assets[0].uri);
+        if (result.canceled || !result.assets?.[0]?.uri) return;
+
+        const localUri = result.assets[0].uri;
+        setUploadingPhoto(true);
+
+        try {
+            // 1. Compress image first
+            const manipulated = await ImageManipulator.manipulateAsync(
+                localUri,
+                [{ resize: { width: 400 } }],
+                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+            );
+
+            // 2. Read base64
+            const base64 = await FileSystem.readAsStringAsync(manipulated.uri, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+
+            // 3. Get user & upload to Supabase Storage
+            const arrayBuffer = decode(base64);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('Not authenticated');
+
+            const fileName = `${user.id}-${Date.now()}.jpg`;
+
+            const { data, error: uploadError } = await supabase.storage
+                .from(PROFILE_PICTURES_BUCKET)
+                .upload(fileName, arrayBuffer, {
+                    contentType: 'image/jpeg',
+                    upsert: true,
+                });
+
+            if (uploadError) throw uploadError;
+
+            // 4. Get public URL and set into form state
+            const { data: publicUrlData } = supabase.storage
+                .from(PROFILE_PICTURES_BUCKET)
+                .getPublicUrl(data.path);
+
+            updateForm('profile_photo', publicUrlData.publicUrl);
+        } catch (e: any) {
+            console.error('[PersonalInfoStep] Profile photo upload error:', e);
+            Alert.alert('Upload Failed', e?.message || 'Failed to upload profile photo');
+        } finally {
+            setUploadingPhoto(false);
+        }
     };
 
     return (
@@ -99,20 +151,33 @@ const PersonalInfoStep = ({ form, updateForm, openModal, onShowDobPicker }: Prop
                 {form.profile_photo ? (
                     <View style={styles.profilePhotoWrap}>
                         <Image source={{ uri: form.profile_photo }} style={styles.profilePhoto} />
+                        {uploadingPhoto && (
+                            <View style={styles.uploadOverlay}>
+                                <ActivityIndicator size="small" color="#FFF" />
+                            </View>
+                        )}
                         <TouchableOpacity
                             style={[styles.changePhotoBtn, { backgroundColor: colors.primary }]}
                             onPress={pickProfilePhoto}
+                            disabled={uploadingPhoto}
                         >
-                            <Ionicons name="camera" size={14} color="#fff" />
+                            <Ionicons name={uploadingPhoto ? 'cloud-upload-outline' : 'camera'} size={14} color="#fff" />
                         </TouchableOpacity>
                     </View>
                 ) : (
                     <TouchableOpacity
                         style={[styles.profilePhotoEmpty, { borderColor: colors.border, backgroundColor: colors.card }]}
                         onPress={pickProfilePhoto}
+                        disabled={uploadingPhoto}
                     >
-                        <Ionicons name="person-circle-outline" size={48} color={colors.textSecondary} />
-                        <Text style={[styles.uploadHint, { color: colors.primary, marginTop: 6 }]}>Upload photo</Text>
+                        {uploadingPhoto ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                            <>
+                                <Ionicons name="person-circle-outline" size={48} color={colors.textSecondary} />
+                                <Text style={[styles.uploadHint, { color: colors.primary, marginTop: 6 }]}>Upload photo</Text>
+                            </>
+                        )}
                     </TouchableOpacity>
                 )}
             </View>
@@ -143,6 +208,14 @@ const styles = StyleSheet.create({
     inputGroup: { marginBottom: 18 },
     profilePhotoWrap: { position: 'relative', width: 90, height: 90 },
     profilePhoto: { width: 90, height: 90, borderRadius: 45 },
+    uploadOverlay: {
+        position: 'absolute',
+        inset: 0,
+        borderRadius: 45,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     changePhotoBtn: {
         position: 'absolute', bottom: 0, right: 0,
         width: 28, height: 28, borderRadius: 14,
@@ -157,3 +230,4 @@ const styles = StyleSheet.create({
 });
 
 export default PersonalInfoStep;
+

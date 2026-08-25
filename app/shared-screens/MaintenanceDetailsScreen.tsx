@@ -106,7 +106,7 @@ const buildTimeline = (request: any): TimelineEvent[] => {
         id: '1',
         title: 'Request Submitted',
         description: 'Maintenance fault logged and submitted to Eden property network.',
-        timestamp: request?.created_at
+        timestamp: request?.created_at && !isNaN(new Date(request.created_at).getTime())
             ? new Date(request.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
             : 'Submitted',
         status: 'done',
@@ -268,6 +268,7 @@ const MaintenanceDetailsScreen = () => {
 
             // 3. Update matching artisan job in Supabase if exists
             try {
+                const artisanId = request?.artisan_id || request?.assigned_artisan?.id;
                 const jobTitle = request?.property_title || request?.property?.title || request?.title;
                 if (jobTitle) {
                     await supabase
@@ -280,6 +281,24 @@ const MaintenanceDetailsScreen = () => {
                             completed_date: new Date().toISOString(),
                         })
                         .ilike('title', `%${request.category || ''}%`);
+                }
+
+                // 4. Recalculate & update artisan's average rating on artisans table
+                if (artisanId) {
+                    const { data: jobRatings } = await supabase
+                        .from('artisan_jobs')
+                        .select('rating')
+                        .eq('artisan_id', artisanId)
+                        .not('rating', 'is', null);
+
+                    if (jobRatings && jobRatings.length > 0) {
+                        const sum = jobRatings.reduce((acc: number, j: any) => acc + Number(j.rating || 0), 0);
+                        const avgRating = Number((sum / jobRatings.length).toFixed(2));
+                        await supabase
+                            .from('artisans')
+                            .update({ rating: avgRating, completed_jobs: jobRatings.length })
+                            .eq('id', artisanId);
+                    }
                 }
             } catch {}
 
@@ -310,8 +329,15 @@ const MaintenanceDetailsScreen = () => {
         // 1. Try to parse from route params first
         if (params.requestData) {
             try {
-                currentItem = JSON.parse(params.requestData);
-            } catch {}
+                const raw = typeof params.requestData === 'string' ? params.requestData : '';
+                try {
+                    currentItem = JSON.parse(decodeURIComponent(raw));
+                } catch {
+                    currentItem = JSON.parse(raw);
+                }
+            } catch (e) {
+                console.warn('[MaintenanceDetails] Failed to parse requestData:', e);
+            }
         }
 
         // 2. Check local storage cache for latest assigned artisan updates
@@ -322,29 +348,34 @@ const MaintenanceDetailsScreen = () => {
                     const list = JSON.parse(storedRaw);
                     const matched = list.find((item: any) => String(item.id) === String(reqId));
                     if (matched) {
-                        currentItem = { ...currentItem, ...matched };
+                        currentItem = { ...(currentItem || {}), ...matched };
                     }
                 }
-            } catch {}
+            } catch (storageErr) {
+                console.warn('[MaintenanceDetails] Cache read warning:', storageErr);
+            }
 
             // 3. Query Supabase for latest status
             try {
-                const { data: dbItem } = await supabase
+                const { data: dbItem, error: dbErr } = await supabase
                     .from('maintenance_requests')
                     .select('*')
                     .eq('id', reqId)
                     .maybeSingle();
 
-                if (dbItem && dbItem.status) {
+                if (!dbErr && dbItem && dbItem.status) {
                     const finalStatus = (currentItem?.status === 'resolved' || dbItem.status === 'resolved')
                         ? 'resolved'
                         : dbItem.status || currentItem?.status || 'pending';
                     currentItem = {
-                        ...currentItem,
+                        ...(currentItem || {}),
+                        ...dbItem,
                         status: finalStatus,
                     };
                 }
-            } catch {}
+            } catch (dbErr) {
+                console.warn('[MaintenanceDetails] Supabase fetch notice:', dbErr);
+            }
         }
 
         if (currentItem) {
@@ -459,9 +490,11 @@ const MaintenanceDetailsScreen = () => {
                             <View style={styles.heroIdWrap}>
                                 <Text style={[styles.requestIdText, { color: colors.textSecondary }]}>{requestId}</Text>
                                 <Text style={[styles.createdText, { color: colors.textSecondary }]}>
-                                    {new Date(request.created_at).toLocaleDateString('en-GB', {
-                                        day: '2-digit', month: 'short', year: 'numeric'
-                                    })}
+                                    {request?.created_at && !isNaN(new Date(request.created_at).getTime())
+                                        ? new Date(request.created_at).toLocaleDateString('en-GB', {
+                                            day: '2-digit', month: 'short', year: 'numeric'
+                                        })
+                                        : 'Recent'}
                                 </Text>
                             </View>
                             <View style={[styles.statusBadge, { backgroundColor: statusColor + '18' }]}>
@@ -486,19 +519,19 @@ const MaintenanceDetailsScreen = () => {
                     <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={[styles.sectionTitle, { color: colors.text }]}>Assigned Maintenance Artisan</Text>
 
-                        {(hasArtisan || request.artisan_id || request.assigned_artisan_id) ? (
+                        {(hasArtisan || request.artisan_id || request.assigned_artisan_id || request.assigned_artisan) ? (
                             /* ─── Artisan IS Assigned ─── */
                             <View>
                                 <View style={styles.artisanRow}>
                                     <Image
-                                        source={{ uri: request.artisan_avatar || request.assigned_artisan_avatar || MOCK_ARTISAN.avatar }}
+                                        source={{ uri: request.artisan_avatar || request.assigned_artisan_avatar || request.assigned_artisan?.avatar || MOCK_ARTISAN.avatar }}
                                         style={styles.artisanAvatar}
                                         contentFit="cover"
                                     />
                                     <View style={styles.artisanInfo}>
                                         <View style={styles.artisanNameRow}>
                                             <Text style={[styles.artisanName, { color: colors.text }]}>
-                                                {request.artisan_name || request.assigned_artisan_name || MOCK_ARTISAN.name}
+                                                {request.artisan_name || request.assigned_artisan_name || request.assigned_artisan?.name || MOCK_ARTISAN.name}
                                             </Text>
                                             <View style={styles.vettedBadge}>
                                                 <Ionicons name="checkmark-circle" size={11} color="#10B981" />
@@ -506,12 +539,14 @@ const MaintenanceDetailsScreen = () => {
                                             </View>
                                         </View>
                                         <Text style={[styles.artisanCategory, { color: colors.textSecondary }]}>
-                                            {request.artisan_trade || `${(request.category || 'General')} Specialist`}
+                                            {request.artisan_trade || request.assigned_artisan?.trade || `${(request.category || 'General')} Specialist`}
                                         </Text>
                                         <View style={styles.ratingRow}>
                                             <Ionicons name="star" size={12} color="#F59E0B" />
                                             <Text style={[styles.ratingText, { color: colors.text }]}>
-                                                5.0 (Eden Top Rated)
+                                                {request.artisan_rating || request.assigned_artisan?.rating 
+                                                    ? Number(request.artisan_rating || request.assigned_artisan?.rating).toFixed(1) 
+                                                    : '0.0'} (Eden Rating)
                                             </Text>
                                         </View>
                                     </View>

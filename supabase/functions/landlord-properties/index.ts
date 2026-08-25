@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
       const thisMonthEarnings = monthlyEarningsData[currentMonth] || 0;
 
       // 4. Landlord / Agent Rating from landlord_ratings table
-      let avgRating = 5.0;
+      let avgRating = 0;
       const { data: ratingsData } = await serviceClient
         .from('landlord_ratings')
         .select('rating')

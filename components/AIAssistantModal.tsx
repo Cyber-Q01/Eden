@@ -4,10 +4,11 @@ import {
     Animated,
     Dimensions,
     FlatList,
+    Keyboard,
     KeyboardAvoidingView,
-    Modal,
     PanResponder,
     Platform,
+    StatusBar,
     StyleSheet,
     Text,
     TextInput,
@@ -39,6 +40,7 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
         },
     ]);
     const [input, setInput] = useState('');
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
     const flatListRef = useRef<FlatList>(null);
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
     const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -62,6 +64,29 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
             ]).start();
         }
     }, [visible]);
+
+    // Track keyboard height and scroll to end when keyboard opens
+    useEffect(() => {
+        const showSub = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            (e) => {
+                if (e?.endCoordinates?.height) {
+                    setKeyboardHeight(e.endCoordinates.height);
+                }
+                setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+            }
+        );
+        const hideSub = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            () => {
+                setKeyboardHeight(0);
+            }
+        );
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
 
     const closeModal = () => {
         Animated.parallel([
@@ -173,18 +198,24 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
     if (!visible) return null;
 
     return (
-        <Modal transparent visible={visible} animationType="none" onRequestClose={closeModal}>
+        <View style={styles.overlayContainer} pointerEvents="box-none">
             <TouchableWithoutFeedback onPress={closeModal}>
                 <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
             </TouchableWithoutFeedback>
 
-            <Animated.View
-                style={[styles.sheet, { backgroundColor: colors.background, transform: [{ translateY }] }]}
+            <KeyboardAvoidingView
+                style={styles.keyboardAvoid}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
-                <KeyboardAvoidingView
-                    style={{ flex: 1 }}
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+                <Animated.View
+                    style={[
+                        styles.sheet,
+                        {
+                            backgroundColor: colors.background,
+                            transform: [{ translateY }],
+                        },
+                    ]}
                 >
                     {/* Drag handle */}
                     <View {...panResponder.panHandlers} style={styles.dragArea}>
@@ -212,11 +243,13 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
                     {/* Messages */}
                     <FlatList
                         ref={flatListRef}
+                        style={{ flex: 1 }}
                         data={messages}
                         keyExtractor={(_, i) => i.toString()}
                         renderItem={renderMessage}
                         contentContainerStyle={styles.messageList}
                         showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
                         ListFooterComponent={
                             loading ? (
                                 <View style={[styles.messageRow]}>
@@ -266,20 +299,40 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
                             <Ionicons name="send" size={16} color="#fff" />
                         </TouchableOpacity>
                     </View>
-                </KeyboardAvoidingView>
-            </Animated.View>
-        </Modal>
+                </Animated.View>
+            </KeyboardAvoidingView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+    overlayContainer: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 99999,
+        elevation: 99999,
+        justifyContent: 'flex-end',
+    },
+    backdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    keyboardAvoid: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 20 : 44,
+    },
     sheet: {
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: SCREEN_HEIGHT * 0.82,
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-        shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.12, shadowRadius: 16, elevation: 20,
+        width: '100%',
+        flex: 1,
+        maxHeight: SCREEN_HEIGHT * 0.82,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 16,
+        elevation: 20,
+        overflow: 'hidden',
     },
     dragArea: { paddingVertical: 12, alignItems: 'center' },
     handle: { width: 40, height: 4, borderRadius: 2 },
@@ -317,7 +370,8 @@ const styles = StyleSheet.create({
     quickChipText: { fontSize: 12, fontWeight: '500' },
     inputRow: {
         flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-        paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 32,
+        paddingHorizontal: 16, paddingVertical: 10,
+        paddingBottom: Platform.OS === 'ios' ? 24 : 12,
         borderTopWidth: StyleSheet.hairlineWidth,
     },
     input: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, maxHeight: 100 },

@@ -2,7 +2,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -106,12 +106,18 @@ const LandlordProfileScreen = () => {
     const { colors, isDark, toggleTheme } = useTheme();
     const { showSuccess, showError } = useToast();
     const [loadingPush, setLoadingPush] = useState(false);
-    const { profile, loading, signOut } = useProfile();
+    const { profile, loading, signOut, refetch } = useProfile();
     const { stats } = useLandlord();
     const { tickets } = useSupportTickets();
     const { registerForPushNotificationsAsync } = useNotifications();
     const [pushEnabled, setPushEnabled] = useState(true);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            refetch();
+        }, [])
+    );
 
     useEffect(() => {
         if (profile) {
@@ -241,7 +247,7 @@ const LandlordProfileScreen = () => {
                             <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
                             <View style={styles.statItem}>
                                 <Text style={[styles.statValue, { color: colors.text }]}>
-                                    {stats.rating ? Number(stats.rating).toFixed(1) : '5.0'}
+                                    {stats.rating ? Number(stats.rating).toFixed(1) : '0.0'}
                                 </Text>
                                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Avg Rating</Text>
                             </View>

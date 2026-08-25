@@ -41,13 +41,23 @@ export const useProfile = () => {
                 .maybeSingle();
 
             if (data || biodataRow) {
+                // Filter out non-http local URIs from stale registrations
+                const rawPhoto = biodataRow?.profile_photo ?? data?.profile_photo ?? user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_photo ?? null;
+                let validPhoto = (rawPhoto && (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://'))) ? rawPhoto : null;
+
+                if (validPhoto) {
+                    const timeStamp = biodataRow?.updated_at ? new Date(biodataRow.updated_at).getTime() : Date.now();
+                    const separator = validPhoto.includes('?') ? '&' : '?';
+                    validPhoto = `${validPhoto}${separator}cb=${timeStamp}`;
+                }
+
                 // Merge biodata so both access patterns work:
                 //   profile?.profile_photo  (flat)
                 //   profile?.user_biodata?.profile_photo  (nested)
                 setProfile({
                     ...(data || {}),
-                    user_biodata: biodataRow ?? null,
-                    profile_photo: biodataRow?.profile_photo ?? data?.profile_photo ?? user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_photo ?? null,
+                    user_biodata: biodataRow ? { ...biodataRow, profile_photo: validPhoto } : null,
+                    profile_photo: validPhoto,
                     phone: biodataRow?.phone_number ?? data?.phone_number ?? data?.phone ?? null,
                     gender: biodataRow?.gender ?? data?.gender ?? null,
                 });
@@ -69,6 +79,17 @@ export const useProfile = () => {
         if (!user) return { error: 'Not authenticated' };
         setLoading(true);
         try {
+            if (updates.profile_photo) {
+                try {
+                    await Promise.all([
+                        supabase.from('users').update({ profile_photo: updates.profile_photo }).eq('id', user.id),
+                        supabase.from('user_biodata').update({ profile_photo: updates.profile_photo, updated_at: new Date().toISOString() }).eq('id', user.id),
+                    ]);
+                } catch (dbErr) {
+                    console.warn('[useProfile] Direct photo pre-update warning:', dbErr);
+                }
+            }
+
             await callEdgeFunction('profile', 'PUT', updates);
             await fetchProfile();
             showSuccess('Profile updated successfully');

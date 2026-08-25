@@ -3,6 +3,7 @@ import CustomButton from '@/components/CustomButton';
 import ScreenWrapper from '@/components/ScreenWrapper';
 import { useTheme } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import CustomDatePickerModal, { formatYYYYMMDD, parseYYYYMMDD } from '@/components/CustomDatePickerModal';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -224,15 +225,14 @@ const BookInspectionScreen = () => {
                     </Text>
                 </TouchableOpacity>
 
-                {showDatePicker && (
-                    <DateTimePicker
-                        value={date}
-                        mode="date"
-                        display="default"
-                        minimumDate={new Date()}
-                        onChange={onDateChange}
-                    />
-                )}
+                <CustomDatePickerModal
+                    visible={showDatePicker}
+                    value={formatYYYYMMDD(date)}
+                    minimumDate={new Date()}
+                    title="Select Preferred Date"
+                    onConfirm={(dateStr) => setDate(parseYYYYMMDD(dateStr))}
+                    onClose={() => setShowDatePicker(false)}
+                />
 
                 <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 24 }]}>Preferred Time</Text>
                 <TouchableOpacity

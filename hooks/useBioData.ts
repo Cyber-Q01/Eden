@@ -13,12 +13,14 @@ export const useBioData = () => {
         try {
             const firstName = (formData.first_name || '').trim();
             const lastName = (formData.last_name || '').trim();
+            const profilePhoto = (formData.profile_photo || '').trim();
 
             // Direct local user table update defense-in-depth
             if (user?.id) {
                 const directPayload: Record<string, any> = { completed_biodata: true };
                 if (firstName) directPayload.first_name = firstName;
                 if (lastName) directPayload.last_name = lastName;
+                if (profilePhoto && !profilePhoto.startsWith('file://')) directPayload.profile_photo = profilePhoto;
 
                 try {
                     await supabase.from('users').update(directPayload).eq('id', user.id);
@@ -32,6 +34,7 @@ export const useBioData = () => {
                 ...formData,
                 first_name: firstName,
                 last_name: lastName,
+                profile_photo: profilePhoto,
             });
 
             // Immediately sync completed_biodata in AuthContext from DB

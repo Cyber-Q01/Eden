@@ -1,6 +1,6 @@
 import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import CustomDatePickerModal from '@/components/CustomDatePickerModal';
 import { decode } from 'base64-arraybuffer';
 import * as FileSystem from 'expo-file-system';
 import { Image } from 'expo-image';
@@ -732,15 +732,14 @@ const ApplicationScreen = () => {
       </ScrollView>
       </KeyboardAvoidingView>
 
-      {showDatePicker && (
-        <DateTimePicker
-          value={moveInDate ? new Date(moveInDate) : new Date()}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={onDateChange}
-          minimumDate={new Date()}
-        />
-      )}
+      <CustomDatePickerModal
+        visible={showDatePicker}
+        value={moveInDate}
+        minimumDate={new Date()}
+        title="Select Desired Move-in Date"
+        onConfirm={(dateStr) => setMoveInDate(dateStr)}
+        onClose={() => setShowDatePicker(false)}
+      />
     </ScreenWrapper>
   );
 };

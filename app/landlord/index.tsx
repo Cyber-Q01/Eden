@@ -166,7 +166,7 @@ const LandlordDashboard = () => {
                 <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Ionicons name="star" size={18} color="#F59E0B" />
                     <Text style={[styles.statValue, { color: colors.text }]}>
-                        {stats.rating ? Number(stats.rating).toFixed(1) : '5.0'}
+                        {stats.rating ? Number(stats.rating).toFixed(1) : '0.0'}
                     </Text>
                     <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Rating</Text>
                 </View>

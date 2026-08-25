@@ -38,7 +38,7 @@ const queryClient = new QueryClient({
 function InitialLayout() {
   const { session, loading, role, completedBiodata } = useAuth();
 
-  // Initialize notifications (requests permission, registers token, handles real-time sync)
+  // Initialize notifications
   useNotifications();
 
   const segments = useSegments();

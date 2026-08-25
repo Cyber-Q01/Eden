@@ -47,4 +47,5 @@ app-example
 
 # generated native folders
 /ios
+supabase/
 /android

@@ -25,20 +25,35 @@ const MaintenanceScreen = () => {
     const [activeFilter, setActiveFilter] = useState<MaintenanceStatus>('all');
     const [refreshing, setRefreshing] = useState(false);
 
-    const applyFilter = useCallback((filter: MaintenanceStatus, data: MaintenanceItem[] = requests) => {
+    // Keep a ref to the master data so filter logic doesn't cause re-fetch loops
+    const requestsRef = React.useRef<MaintenanceItem[]>([]);
+    const activeFilterRef = React.useRef<MaintenanceStatus>(activeFilter);
+    activeFilterRef.current = activeFilter;
+
+    const applyFilter = useCallback((filter: MaintenanceStatus, data?: MaintenanceItem[]) => {
+        const source = data ?? requestsRef.current;
         setActiveFilter(filter);
         if (filter === 'all') {
-            setFilteredRequests(data);
+            setFilteredRequests(source);
         } else {
-            setFilteredRequests(data.filter(r => r.status === filter));
+            setFilteredRequests(source.filter(r => r.status === filter));
         }
-    }, [requests]);
+    }, []);
 
     const loadRequests = useCallback(async () => {
         const data = await fetchMaintenanceRequests();
+        requestsRef.current = data;
         setRequests(data);
-        applyFilter(activeFilter, data);
-    }, [fetchMaintenanceRequests, activeFilter, applyFilter]);
+        // Re-apply whatever filter is currently active on the fresh data
+        applyFilter(activeFilterRef.current, data);
+    }, [fetchMaintenanceRequests, applyFilter]);
+
+    // Only re-apply filter when activeFilter changes (NOT re-fetch)
+    useEffect(() => {
+        if (requestsRef.current.length > 0) {
+            applyFilter(activeFilter);
+        }
+    }, [activeFilter, applyFilter]);
 
     // Refetch whenever screen comes into focus
     useFocusEffect(
@@ -117,7 +132,7 @@ const MaintenanceScreen = () => {
         <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={['all', 'pending', 'in_progress', 'resolved', 'closed'] as MaintenanceStatus[]}
+            data={['all', 'pending', 'in_progress', 'resolved'] as MaintenanceStatus[]}
             keyExtractor={(item) => item}
             contentContainerStyle={styles.filterList}
             renderItem={({ item }) => (
@@ -151,7 +166,10 @@ const MaintenanceScreen = () => {
                 onPress={() =>
                     router.push({
                         pathname: '/shared-screens/MaintenanceDetailsScreen',
-                        params: { id: item.id, requestData: JSON.stringify(item) },
+                        params: { 
+                            id: item.id, 
+                            requestData: encodeURIComponent(JSON.stringify(item)),
+                        },
                     })
                 }
             >

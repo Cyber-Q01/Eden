@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -21,24 +21,69 @@ type Props = {
     openModal: (key: ModalKeys) => void;
 };
 
+// Layer 1: Client Dummy NIN check (₦0 cost)
+function isClientDummyNIN(nin: string): boolean {
+    if (/^(\d)\1{10}$/.test(nin)) return true;
+    const dummy = [
+        '12345678901',
+        '01234567890',
+        '98765432109',
+        '09876543210',
+        '12345678910',
+        '00012345678',
+    ];
+    return dummy.includes(nin);
+}
+
 const IdentityStep = ({ form, updateForm }: Props) => {
     const { colors, isDark } = useTheme();
     const { showSuccess, showError } = useToast();
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationError, setVerificationError] = useState<string | null>(null);
+    const [cooldownSeconds, setCooldownSeconds] = useState(0);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Handle 30s countdown timer
+    useEffect(() => {
+        if (cooldownSeconds > 0) {
+            timerRef.current = setTimeout(() => {
+                setCooldownSeconds((prev) => prev - 1);
+            }, 1000);
+        }
+        return () => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
+    }, [cooldownSeconds]);
+
+    const startCooldown = (seconds = 30) => {
+        setCooldownSeconds(seconds);
+    };
 
     const handleTriggerNINVerification = async () => {
+        if (cooldownSeconds > 0 || isVerifying) return;
+
         const nin = (form.id_number || '').trim();
 
-        if (!nin || nin.length !== 11) {
-            Alert.alert('Invalid NIN', 'Please enter your 11-digit National Identification Number.');
+        // ── LAYER 1: CLIENT-SIDE PRE-FLIGHT VALIDATION (₦0 Spent) ────────────
+        // 1. Strict 11-digit numeric check
+        if (!/^\d{11}$/.test(nin)) {
+            Alert.alert('Invalid NIN Format', 'Your National Identification Number must be exactly 11 numeric digits without letters or spaces.');
             return;
         }
 
-        if (!form.first_name?.trim() || !form.last_name?.trim()) {
+        // 2. Dummy / Brute-force check
+        if (isClientDummyNIN(nin)) {
+            Alert.alert('Invalid NIN', 'Please enter a genuine 11-digit NIN issued to you by NIMC.');
+            return;
+        }
+
+        // 3. Name check
+        const firstName = form.first_name?.trim();
+        const lastName = form.last_name?.trim();
+        if (!firstName || !lastName || firstName.length < 2 || lastName.length < 2) {
             Alert.alert(
-                'Names Missing',
-                'Please go back to Step 1 (Personal Info) and fill in your First Name and Last Name as on your ID before verifying.'
+                'Legal Names Required',
+                'Please go back to Step 1 (Personal Info) and fill in your official First Name and Last Name as shown on your National ID before verifying.'
             );
             return;
         }
@@ -62,8 +107,8 @@ const IdentityStep = ({ form, updateForm }: Props) => {
                 'POST',
                 {
                     nin: nin,
-                    first_name: form.first_name.trim(),
-                    last_name: form.last_name.trim(),
+                    first_name: firstName,
+                    last_name: lastName,
                     dob: form.dob || '',
                     method: 'nin',
                 }
@@ -79,31 +124,52 @@ const IdentityStep = ({ form, updateForm }: Props) => {
                 showSuccess('National ID Verified Successfully! 🎉');
             } else {
                 setVerificationError('Could not verify NIN record with NIMC database.');
+                startCooldown(30);
             }
         } catch (error: any) {
             console.error('[NIN Verification Error]:', error);
-            const msg = error?.message || 'NIN verification failed';
-            setVerificationError(msg);
+            const msg = error?.message || '';
 
-            if (msg.includes('Name Mismatch') || msg.includes('Date of Birth Mismatch')) {
+            // Enforce automatic 30s cooldown on failure
+            startCooldown(30);
+
+            if (msg.includes('Rate Limit') || msg.includes('Hourly Limit') || msg.includes('Daily Limit') || msg.includes('RATE_LIMITED') || msg.includes('429')) {
+                Alert.alert(
+                    'Rate Limit Notice ⏳',
+                    msg || 'Too many attempts. Please wait before trying again to protect identity security.',
+                    [{ text: 'OK' }]
+                );
+                setVerificationError(msg || 'Rate limit reached. Please wait before retrying.');
+            } else if (msg.includes('Name Mismatch') || msg.includes('Date of Birth Mismatch') || msg.includes('IDENTITY_MISMATCH')) {
                 Alert.alert(
                     'Identity Mismatch ⚠️',
                     'The First Name, Last Name, or Date of Birth you entered does not match your official NIMC National ID record.\n\nPlease go back to Step 1 and make sure your names and Date of Birth match your National ID card exactly.',
                     [{ text: 'Review Step 1 Names' }]
                 );
-            } else if (msg.includes('Duplicate Identity')) {
+                setVerificationError('Name or Date of Birth does not match your National ID record. Please check Step 1.');
+            } else if (msg.includes('Duplicate Identity') || msg.includes('already been linked')) {
                 Alert.alert(
                     'Duplicate Identity ⚠️',
                     'This National Identification Number (NIN) is already registered on another Eden account. Each user may only operate one account.',
                     [{ text: 'OK' }]
                 );
+                setVerificationError('This NIN is already linked to another account.');
+            } else if (msg.includes('NIN must be') || msg.includes('Invalid NIN')) {
+                setVerificationError(msg);
             } else {
-                Alert.alert('Verification Failed', msg);
+                Alert.alert(
+                    'Verification Failed',
+                    msg || 'We could not verify your identity at this time. Please check your details and try again.'
+                );
+                setVerificationError(msg || 'Verification failed. Please check your details and try again.');
             }
         } finally {
             setIsVerifying(false);
         }
     };
+
+    const isInputValid = (form.id_number || '').trim().length === 11 && !isClientDummyNIN((form.id_number || '').trim());
+    const isButtonDisabled = isVerifying || !isInputValid || cooldownSeconds > 0 || form.is_nin_verified;
 
     return (
         <View style={styles.stepContent}>
@@ -153,8 +219,11 @@ const IdentityStep = ({ form, updateForm }: Props) => {
                     keyboardType="number-pad"
                     maxLength={11}
                     value={form.id_number}
+                    autoComplete="off"
+                    textContentType="none"
+                    autoCorrect={false}
                     onChangeText={(t) => {
-                        updateForm('id_number', t);
+                        updateForm('id_number', t.replace(/[^0-9]/g, ''));
                         if (form.is_nin_verified) {
                             updateForm('is_nin_verified', false);
                         }
@@ -165,15 +234,26 @@ const IdentityStep = ({ form, updateForm }: Props) => {
             {/* Verification Trigger Button */}
             {!form.is_nin_verified ? (
                 <TouchableOpacity
-                    style={[styles.verifyBtn, { backgroundColor: colors.primary }]}
+                    style={[
+                        styles.verifyBtn,
+                        {
+                            backgroundColor: cooldownSeconds > 0 ? (isDark ? '#374151' : '#9CA3AF') : colors.primary,
+                            opacity: isButtonDisabled ? 0.6 : 1,
+                        },
+                    ]}
                     onPress={handleTriggerNINVerification}
-                    disabled={isVerifying || (form.id_number || '').trim().length !== 11}
+                    disabled={isButtonDisabled}
                     activeOpacity={0.85}
                 >
                     {isVerifying ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                             <ActivityIndicator size="small" color="#FFF" />
                             <Text style={styles.verifyBtnText}>Checking NIMC Database...</Text>
+                        </View>
+                    ) : cooldownSeconds > 0 ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name="time-outline" size={18} color="#FFF" />
+                            <Text style={styles.verifyBtnText}>Retry in {cooldownSeconds}s...</Text>
                         </View>
                     ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -194,11 +274,18 @@ const IdentityStep = ({ form, updateForm }: Props) => {
                 </View>
             )}
 
-            {/* Error Display if any */}
+            {/* Error Display with Cooldown Notice if any */}
             {verificationError && !form.is_nin_verified && (
                 <View style={styles.errorBox}>
                     <Ionicons name="alert-circle" size={18} color="#EF4444" />
-                    <Text style={styles.errorText}>{verificationError}</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.errorText}>{verificationError}</Text>
+                        {cooldownSeconds > 0 && (
+                            <Text style={styles.cooldownNote}>
+                                Cooldown active to protect verification costs. You can retry in {cooldownSeconds}s.
+                            </Text>
+                        )}
+                    </View>
                 </View>
             )}
         </View>
@@ -305,9 +392,14 @@ const styles = StyleSheet.create({
     errorText: {
         color: '#DC2626',
         fontSize: 12,
-        flex: 1,
         lineHeight: 17,
         fontWeight: '500',
+    },
+    cooldownNote: {
+        color: '#B91C1C',
+        fontSize: 11,
+        marginTop: 4,
+        fontWeight: '600',
     },
 });
 

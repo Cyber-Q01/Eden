@@ -2,7 +2,7 @@ import BackButton from '@/components/BackButton';
 import { EMPLOYER_HIDDEN_STATUSES } from '@/constants/biodataOptions';
 import { useBankDetails } from '@/hooks/useBankDetails';
 import { useBioData } from '@/hooks/useBioData';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import CustomDatePickerModal from '@/components/CustomDatePickerModal';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -29,6 +29,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { BiodataForm, ModalKeys } from '../../types/biodata';
 import { supabase } from '../../lib/supabase';
+import { useProfile } from '../../hooks/useProfile';
+import { Ionicons } from '@expo/vector-icons';
 
 const EMPTY_FORM: BiodataForm = {
     first_name: '',
@@ -62,6 +64,7 @@ const BioDataScreen = () => {
     const { role, user } = useAuth();
     const { submitBioData, isSubmitting } = useBioData();
     const { fetchBanks } = useBankDetails();
+    const { signOut } = useProfile();
     const router = useRouter();
     const isLandlord = role === 'LANDLORD' || role === 'ADMIN';
     const STEP_LABELS = isLandlord
@@ -71,6 +74,7 @@ const BioDataScreen = () => {
 
     const [step, setStep] = useState(0);
     const [showDobPicker, setShowDobPicker] = useState(false);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [form, setForm] = useState<BiodataForm>(EMPTY_FORM);
     const [bankOptions, setBankOptions] = useState<any[]>([]);
     const [modals, setModals] = useState<Record<ModalKeys, boolean>>({
@@ -106,7 +110,7 @@ const BioDataScreen = () => {
                     gender: bData?.gender || prev.gender,
                     profile_photo: bData?.profile_photo || prev.profile_photo,
                     id_type: 'NIN',
-                    id_number: bData?.id_number || prev.id_number,
+                    id_number: '', // NIN never pre-filled — user must re-enter for security
                     is_nin_verified: Boolean(uData?.is_verified || uData?.is_nin_verified || bData?.kyc_status === 'verified'),
                     employment_status: bData?.employment_status || prev.employment_status,
                     employer_name: bData?.employer_name || prev.employer_name,
@@ -155,6 +159,21 @@ const BioDataScreen = () => {
     };
 
     // ── Navigation ────────────────────────────────────────────────────────────
+
+    const handleLogout = () => {
+        Alert.alert(
+            'Sign Out',
+            'Are you sure you want to sign out? Your progress will be saved.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Sign Out',
+                    style: 'destructive',
+                    onPress: async () => { await signOut(); },
+                },
+            ]
+        );
+    };
 
     const validateStep = () => {
         const currentStepLabel = STEP_LABELS[step];
@@ -307,7 +326,14 @@ const BioDataScreen = () => {
                         Step {step + 1} of {totalSteps}
                     </Text>
                 </View>
-                <View style={{ width: 40 }} />
+                {/* Logout button — always visible so user can escape if needed */}
+                <TouchableOpacity
+                    style={styles.logoutBtn}
+                    onPress={handleLogout}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons name="log-out-outline" size={22} color="#EF4444" />
+                </TouchableOpacity>
             </View>
 
             <StepIndicator currentStep={step} totalSteps={totalSteps} labels={STEP_LABELS} />
@@ -337,24 +363,30 @@ const BioDataScreen = () => {
                         <Text style={[styles.backBtnText, { color: colors.text }]}>Back</Text>
                     </TouchableOpacity>
                 )}
+                {/* Disable Continue on Identity step until NIN is verified */}
                 <CustomButton
                     title={step === totalSteps - 1 ? 'Complete Registration 🎉' : 'Continue'}
                     onPress={handleNext}
                     loading={isSubmitting}
-                    style={styles.nextBtn}
+                    style={[
+                        styles.nextBtn,
+                        (STEP_LABELS[step] === 'Identity' && !form.is_nin_verified)
+                            ? { opacity: 0.45 }
+                            : {},
+                    ]}
+                    disabled={STEP_LABELS[step] === 'Identity' && !form.is_nin_verified}
                 />
             </View>
 
             {/* Date Picker */}
-            {showDobPicker && (
-                <DateTimePicker
-                    value={form.dob ? new Date(form.dob) : new Date(2000, 0, 1)}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={onDateChange}
-                    maximumDate={new Date()}
-                />
-            )}
+            <CustomDatePickerModal
+                visible={showDobPicker}
+                value={form.dob}
+                maximumDate={new Date()}
+                title="Select Date of Birth"
+                onConfirm={(dateStr) => updateForm('dob', dateStr)}
+                onClose={() => setShowDobPicker(false)}
+            />
 
             {/* All BottomSheet Pickers */}
             <BiodataModals
@@ -379,6 +411,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: StyleSheet.hairlineWidth,
     },
     backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+    logoutBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
     headerCenter: { alignItems: 'center' },
     headerTitle: { fontSize: 17, fontWeight: '700' },
     headerSub: { fontSize: 12, marginTop: 2 },

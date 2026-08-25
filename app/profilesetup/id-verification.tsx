@@ -25,6 +25,7 @@ import { useUser } from '../../context/UserContext';
 import { useAuth } from '../../context/AuthContext';
 import { callEdgeFunction } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import { useProfile } from '../../hooks/useProfile';
 
 const IDVerificationScreen = () => {
     const router = useRouter();
@@ -32,6 +33,18 @@ const IDVerificationScreen = () => {
     const { user } = useAuth();
     const { colors, isDark } = useTheme();
     const { showError, showSuccess } = useToast();
+    const { signOut } = useProfile();
+
+    const handleLogout = () => {
+        Alert.alert(
+            'Sign Out',
+            'Are you sure you want to sign out?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Sign Out', style: 'destructive', onPress: async () => { await signOut(); } },
+            ]
+        );
+    };
 
     const [ninInput, setNinInput] = useState('');
     const [firstNameInput, setFirstNameInput] = useState('');
@@ -53,7 +66,7 @@ const IDVerificationScreen = () => {
             try {
                 const { data: userData } = await supabase
                     .from('users')
-                    .select('first_name, last_name, is_verified, user_biodata!user_biodata_id_fkey(dob, kyc_status, id_number)')
+                    .select('first_name, last_name, is_verified, user_biodata!user_biodata_id_fkey(dob, kyc_status)')
                     .eq('id', user.id)
                     .maybeSingle();
 
@@ -67,7 +80,7 @@ const IDVerificationScreen = () => {
                     const bio = Array.isArray(userData.user_biodata) ? userData.user_biodata[0] : userData.user_biodata;
                     if (bio) {
                         if (bio.dob) setDobInput(bio.dob);
-                        if (bio.id_number) setNinInput(bio.id_number);
+                        // NIN is never pre-filled — user must re-enter for security
                         if (bio.kyc_status === 'verified') {
                             setVerificationStatus(prev => ({ ...prev, id: 'verified' }));
                         }
@@ -114,22 +127,22 @@ const IDVerificationScreen = () => {
             }
         } catch (error: any) {
             console.error('[NIN Verification Error]:', error);
-            const msg = error?.message || 'NIN verification failed';
+            const msg = error?.message || '';
 
-            if (msg.includes('Name Mismatch') || msg.includes('Date of Birth Mismatch')) {
+            if (msg.includes('Name Mismatch') || msg.includes('Date of Birth Mismatch') || msg.includes('IDENTITY_MISMATCH')) {
                 Alert.alert(
                     'Identity Mismatch ⚠️',
                     'The First Name, Last Name, or Date of Birth you entered does not match your official NIMC National ID record.\n\nPlease review your names and Date of Birth and make sure they match your National ID card exactly.',
                     [{ text: 'Review Details' }]
                 );
-            } else if (msg.includes('Duplicate Identity')) {
+            } else if (msg.includes('Duplicate Identity') || msg.includes('already been linked')) {
                 Alert.alert(
                     'Duplicate Identity ⚠️',
                     'This National Identification Number (NIN) is already linked and verified on another Eden account. Each user may only operate one verified account.',
                     [{ text: 'OK' }]
                 );
             } else {
-                Alert.alert('Verification Failed', msg);
+                Alert.alert('Verification Failed', 'We could not verify your identity at this time. Please check your details and try again.');
             }
         } finally {
             setIsVerifyingNIN(false);
@@ -164,11 +177,20 @@ const IDVerificationScreen = () => {
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.primary }]}>NIN Identity Verification</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                        Verified identity protection required for all Eden network participants
-                    </Text>
+                <View style={[styles.header, { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }]}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.title, { color: colors.primary }]}>NIN Identity Verification</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                            Verified identity protection required for all Eden network participants
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        onPress={handleLogout}
+                        style={{ padding: 4, marginTop: 2 }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Ionicons name="log-out-outline" size={22} color="#EF4444" />
+                    </TouchableOpacity>
                 </View>
 
                 {/* NDPR Privacy Banner */}
@@ -295,7 +317,10 @@ const IDVerificationScreen = () => {
                                 keyboardType="number-pad"
                                 maxLength={11}
                                 value={ninInput}
-                                onChangeText={setNinInput}
+                                autoComplete="off"
+                                textContentType="none"
+                                autoCorrect={false}
+                                onChangeText={(t) => setNinInput(t.replace(/[^0-9]/g, ''))}
                             />
                         </View>
 
@@ -322,9 +347,15 @@ const IDVerificationScreen = () => {
                         </View>
 
                         <TouchableOpacity
-                            style={[styles.confirmIdBtn, { backgroundColor: colors.primary }]}
+                            style={[
+                                styles.confirmIdBtn,
+                                {
+                                    backgroundColor: colors.primary,
+                                    opacity: (isVerifyingNIN || ninInput.trim().length !== 11) ? 0.5 : 1,
+                                },
+                            ]}
                             onPress={handleVerifyNIN}
-                            disabled={isVerifyingNIN}
+                            disabled={isVerifyingNIN || ninInput.trim().length !== 11}
                         >
                             {isVerifyingNIN ? (
                                 <ActivityIndicator color="#FFF" size="small" />

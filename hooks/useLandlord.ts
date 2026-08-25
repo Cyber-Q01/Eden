@@ -72,7 +72,7 @@ export const useLandlord = () => {
         amountPending: 0,
         last6MonthsTotal: 0,
         thisMonthEarnings: 0,
-        rating: 5.0,
+        rating: 0,
     };
     const activeListings = data?.listings ?? [];
     const applications = data?.applications ?? [];

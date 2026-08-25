@@ -4,7 +4,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -109,7 +109,7 @@ const ProfileScreen = () => {
     const { colors, isDark, toggleTheme } = useTheme();
     const { showSuccess, showError } = useToast();
     const [loadingPush, setLoadingPush] = useState(false);
-    const { profile, loading, signOut } = useProfile();
+    const { profile, loading, signOut, refetch } = useProfile();
     const { registerForPushNotificationsAsync } = useNotifications();
     const [pushEnabled, setPushEnabled] = useState(true);
     const { credits, loading: creditsLoading } = useCredits();
@@ -117,6 +117,12 @@ const ProfileScreen = () => {
     const { applications, refetch: fetchApplications, loading: appsLoading } = useMyApplications();
     const { tickets } = useSupportTickets();
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            refetch();
+        }, [])
+    );
 
     useEffect(() => {
         if (profile && profile.push_notifications_enabled !== undefined) {

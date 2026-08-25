@@ -213,39 +213,64 @@ export const useNotifications = () => {
     }
 
     try {
-      const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-      console.log('Expo Push Token:', token);
+      let token: string | undefined;
+
+      try {
+        token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      } catch (expoTokenErr) {
+        console.warn('[Push] Expo push token failed, trying device token:', expoTokenErr);
+        // Fallback: get native FCM token (works on physical Android outside Expo Go)
+        if (Platform.OS === 'android') {
+          const deviceToken = await Notifications.getDevicePushTokenAsync();
+          token = deviceToken.data;
+        }
+      }
+
+      if (!token) {
+        console.warn('[Push] Could not obtain any push token');
+        return;
+      }
+
+      console.log('[Push] Token obtained:', token);
 
       if (user) {
         const { error } = await supabase
           .from('users')
           .update({ push_token: token })
           .eq('id', user.id);
-        
+
         if (error) {
-          console.error('Error saving push token to Supabase:', error);
+          console.error('[Push] Error saving push token:', error);
+        } else {
+          console.log('[Push] Token saved to Supabase successfully');
         }
       }
       return token;
     } catch (e) {
-      console.error('Error getting push token:', e);
+      console.error('[Push] Error in registerForPushNotificationsAsync:', e);
     }
   };
+
+  // ── Set Android notification channel (once on mount) ────────────────────
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('default', {
+        name: 'Eden Notifications',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#407BFF',
+        sound: 'default',
+        enableVibrate: true,
+        showBadge: true,
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (user) {
       registerForPushNotificationsAsync();
     }
   }, [user]);
-
-  if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
-    });
-  }
 
   return {
     notifications,

@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     FlatList,
     KeyboardAvoidingView,
     Linking,
@@ -21,11 +21,10 @@ import {
 import BackButton from '../../components/BackButton';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useToast } from '../../components/Toast';
-import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useLeases } from '../../hooks/useLeases';
 import { supabase } from '../../lib/supabase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 interface Artisan {
@@ -182,7 +181,7 @@ const FindArtisanScreen = () => {
     const { leases, fetchLeases } = useLeases();
 
     const [artisans, setArtisans] = useState<Artisan[]>(FALLBACK_ARTISANS);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false); // false: fallback renders instantly
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState(params.category || 'all');
     const [selectedArtisan, setSelectedArtisan] = useState<Artisan | null>(null);
@@ -200,25 +199,28 @@ const FindArtisanScreen = () => {
 
     // Load Live Artisans from Supabase with Instant Cache
     useEffect(() => {
-        // 1. Instant Cache Load (0ms UI display)
+        // 1. Try cache first — update display instantly if hit
         AsyncStorage.getItem('eden_cached_artisans_v2').then((cached) => {
             if (cached) {
                 try {
                     const parsed = JSON.parse(cached);
                     if (Array.isArray(parsed) && parsed.length > 0) {
                         setArtisans(parsed);
-                        setLoading(false);
                     }
-                } catch {}
+                } catch { }
             }
         });
 
+        // 2. Background DB refresh — does NOT block the UI
         loadArtisans();
+
+        // 3. Decouple lease fetch — doesn't affect artisan display
         fetchLeases().then(data => {
             if (data && data.length > 0) {
                 setSelectedProperty(data[0]);
             }
-        });
+        }).catch(() => { });
+
         if (params.category) {
             setSelectedCategory(params.category);
         }
@@ -226,9 +228,9 @@ const FindArtisanScreen = () => {
 
     const loadArtisans = async () => {
         try {
-            const { data, error } = await supabase
+            const { data } = await supabase
                 .from('artisans')
-                .select('id, name, trade, rating, completed_jobs, active_jobs, location, state, lga, profile_picture, avatar_url, bio, phone, kyc_status, dispatch_security_pin, experience_years, is_available, status')
+                .select('id, name, trade, rating, completed_jobs, location, state, lga, profile_picture, avatar_url, bio, phone, kyc_status, dispatch_security_pin, experience_years, is_available')
                 .eq('is_available', true)
                 .order('rating', { ascending: false })
                 .limit(40);
@@ -238,7 +240,7 @@ const FindArtisanScreen = () => {
                     id: d.id,
                     name: d.name || 'Artisan',
                     trade: d.trade || 'Plumber',
-                    rating: d.rating ? Number(d.rating) : 5.0,
+                    rating: d.rating ? Number(d.rating) : 0,
                     completedJobs: d.completed_jobs || 0,
                     location: `${d.lga || ''}, ${d.state || 'Lagos'}`.trim().replace(/^,/, ''),
                     state: d.state || 'Lagos',
@@ -251,16 +253,14 @@ const FindArtisanScreen = () => {
                     experienceYears: d.experience_years || 5,
                 }));
                 setArtisans(mapped);
-                AsyncStorage.setItem('eden_cached_artisans_v2', JSON.stringify(mapped)).catch(() => {});
-            } else {
-                if (artisans.length === 0) setArtisans(FALLBACK_ARTISANS);
+                AsyncStorage.setItem('eden_cached_artisans_v2', JSON.stringify(mapped)).catch(() => { });
             }
+            // if DB returns empty, fallback already showing — no change needed
         } catch (e) {
-            console.warn('Failed to load live artisans, using fallback:', e);
-            if (artisans.length === 0) setArtisans(FALLBACK_ARTISANS);
-        } finally {
-            setLoading(false);
+            console.warn('Failed to load live artisans, fallback in use:', e);
+            // fallback is already in state — do nothing
         }
+        // Note: we deliberately do NOT call setLoading here — loading is always false
     };
 
     // Filter artisans based on category and search query
@@ -426,14 +426,14 @@ const FindArtisanScreen = () => {
                     onPress={() => handleOpenBooking(item)}
                     activeOpacity={0.8}
                 >
-                    <Text style={styles.bookButtonText}>Book Inspection</Text>
+                    <Text style={styles.bookButtonText}>Book Artisan</Text>
                 </TouchableOpacity>
             </View>
         </View>
     );
 
     return (
-        <ScreenWrapper style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             {/* Top Navigation */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <BackButton />

@@ -13,14 +13,14 @@ import { useTheme } from '../../context/ThemeContext';
 import { Application, useLandlordApplications, useMyApplications } from '../../hooks/useApplications';
 
 const STATUS_CONFIG = {
-  pending: { label: 'Pending', color: '#f59e0b', bg: '#fef3c7', icon: 'time-outline' },
-  accepted: { label: 'Accepted', color: '#10b981', bg: '#d1fae5', icon: 'checkmark-circle-outline' },
-  declined: { label: 'Declined', color: '#ef4444', bg: '#fee2e2', icon: 'close-circle-outline' },
+  pending: { label: 'Pending', color: '#f59e0b' },
+  accepted: { label: 'Accepted', color: '#10b981' },
+  declined: { label: 'Declined', color: '#ef4444' },
 };
 
 const ApplicationsScreen = () => {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user, role } = useAuth();
 
   // Determine which hook to use based on user role
@@ -83,7 +83,7 @@ const ApplicationsScreen = () => {
             applicationData: JSON.stringify(item),
           }
         })}
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={[styles.card, { backgroundColor: colors.card }]}
       >
         {/* Property info */}
         <View style={styles.cardHeader}>
@@ -102,21 +102,19 @@ const ApplicationsScreen = () => {
               {item.property?.location}
             </Text>
             <Text style={[styles.propertyPrice, { color: colors.primary }]}>
-              ₦{Number(item.property?.price ?? 0).toLocaleString()}/yr
+              ₦{Number(item.property?.price ?? 0).toLocaleString()}/year
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end', gap: 8 }}>
-            {/* Status badge */}
-            <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
-              <Ionicons name={statusCfg.icon as any} size={12} color={statusCfg.color} />
+          <View style={styles.cardRight}>
+            {/* Status badge (outlined pill) */}
+            <View style={[styles.statusBadge, { backgroundColor: colors.card, borderColor: statusCfg.color }]}>
               <Text style={[styles.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
             </View>
-
-            <Ionicons name="chevron-forward" size={20} color={colors.border} />
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#475569' : '#CBD5E1'} />
           </View>
         </View>
 
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <View style={[styles.divider, { backgroundColor: isDark ? colors.border : '#E2E8F0' }]} />
 
         {/* Renter/Landlord info */}
         <View style={styles.renterRow}>
@@ -133,16 +131,10 @@ const ApplicationsScreen = () => {
               } catch {}
             }
             return (
-              <View style={[styles.renterAvatar, { backgroundColor: colors.primary + '20', overflow: 'hidden' }]}>
+              <View style={[styles.renterAvatar, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]}>
                 {photoUrl ? (
                   <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} />
-                ) : (
-                  <Text style={[styles.renterInitial, { color: colors.primary }]}>
-                    {isRenter
-                      ? (item.property as any)?.owner?.first_name?.[0]?.toUpperCase()
-                      : item.renter?.first_name?.[0]?.toUpperCase() ?? '?'}
-                  </Text>
-                )}
+                ) : null}
               </View>
             );
           })()}
@@ -162,12 +154,10 @@ const ApplicationsScreen = () => {
           </View>
         </View>
 
-        {/* Status Message */}
-        <View style={[styles.acceptedNote, { backgroundColor: colors.background, marginTop: 0 }]}>
-          <Text style={[styles.acceptedNoteText, { color: colors.textSecondary, fontSize: 12 }]}>
-            Tap to view details and take actions
-          </Text>
-          <Ionicons name="arrow-forward" size={14} color={colors.textSecondary} />
+        {/* Action CTA */}
+        <View style={styles.ctaButton}>
+          <Text style={styles.ctaButtonText} numberOfLines={1}>Tap to view Details and take action</Text>
+          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
         </View>
       </TouchableOpacity>
     );
@@ -176,9 +166,9 @@ const ApplicationsScreen = () => {
   return (
     <ScreenWrapper withScrollView={true} style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={styles.header}>
         <BackButton />
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Applications</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Applications</Text>
         <View style={[styles.countBadge, { backgroundColor: colors.primary + '20' }]}>
           <Text style={[styles.countText, { color: colors.primary }]}>
             {applications.filter(a => a.status === 'pending').length}
@@ -213,39 +203,49 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16, paddingVertical: 12,
   },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700' },
+  headerTitle: { fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center' },
   countBadge: { width: 40, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   countText: { fontSize: 14, fontWeight: '700' },
   listContent: { padding: 16, gap: 16, paddingBottom: 40 },
-  card: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14 },
-  propertyImage: { width: 56, height: 56, borderRadius: 10 },
+  card: {
+    borderRadius: 16, overflow: 'hidden',
+    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  cardRight: { alignItems: 'flex-end', gap: 12 },
+  propertyImage: { width: 56, height: 56, borderRadius: 12 },
   propertyImagePlaceholder: {
-    width: 56, height: 56, borderRadius: 10,
+    width: 56, height: 56, borderRadius: 12,
     justifyContent: 'center', alignItems: 'center',
   },
-  propertyTitle: { fontSize: 14, fontWeight: '700' },
+  propertyTitle: { fontSize: 15, fontWeight: '700' },
   propertyLocation: { fontSize: 12, marginTop: 2 },
-  propertyPrice: { fontSize: 13, fontWeight: '700', marginTop: 4 },
+  propertyPrice: { fontSize: 14, fontWeight: '700', marginTop: 4 },
   statusBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
   },
-  statusText: { fontSize: 11, fontWeight: '600' },
-  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14 },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  divider: { height: 1, marginHorizontal: 14 },
   renterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
   renterAvatar: {
     width: 36, height: 36, borderRadius: 18,
     justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden',
   },
-  renterInitial: { fontSize: 16, fontWeight: '700' },
-  renterName: { fontSize: 14, fontWeight: '600' },
-  renterEmail: { fontSize: 12 },
+  renterName: { fontSize: 15, fontWeight: '700' },
+  renterEmail: { fontSize: 12, marginTop: 2 },
   dateContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dateText: { fontSize: 11 },
+  dateText: { fontSize: 12 },
+  ctaButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    margin: 14, marginTop: 0, height: 48, borderRadius: 14,
+    backgroundColor: '#F2A65E', paddingHorizontal: 16,
+  },
+  ctaButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', flex: 1 },
   messageBox: {
     marginHorizontal: 14, marginBottom: 14, padding: 12,
     borderRadius: 10, borderWidth: 1,
@@ -259,11 +259,6 @@ const styles = StyleSheet.create({
   declineBtnText: { fontSize: 14, fontWeight: '600' },
   acceptBtn: { flex: 2, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   acceptBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  acceptedNote: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 12, margin: 14, marginTop: 0, borderRadius: 10,
-  },
-  acceptedNoteText: { fontSize: 13, fontWeight: '500', flex: 1 },
   empty: { alignItems: 'center', paddingTop: 80, gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySubtitle: { fontSize: 14, textAlign: 'center', maxWidth: 260 },

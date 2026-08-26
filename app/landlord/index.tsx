@@ -329,7 +329,7 @@ const LandlordDashboard = () => {
                                     price={`₦${item.price?.toLocaleString()}/yr`}
                                     location={item.address || 'Lagos, Nigeria'}
                                     isLandlord={true}
-                                    status={item.is_occupied ? 'Occupied' : 'Available'}
+                                    status={item.status === 'taken' ? 'Taken' : 'Available'}
                                     views={item.view_count || 0}
                                     commission={role === 'AGENT' ? commVal : undefined}
                                     onPress={() => router.push(`/property/${item.id}`)}

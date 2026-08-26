@@ -638,9 +638,11 @@ const PropertyDetailScreen = () => {
                                 {property.status === 'available' ? 'Available' : 'Taken'}
                             </Text>
                         </View>
-                        <Text style={[styles.rentalAppText, { color: isDark ? '#93C5FD' : '#1E3A8A' }]}>
-                            {isSale ? 'For Sale' : 'Rental Application'}
-                        </Text>
+                        {isSale && (
+                            <Text style={[styles.rentalAppText, { color: isDark ? '#93C5FD' : '#1E3A8A' }]}>
+                                For Sale
+                            </Text>
+                        )}
                     </View>
 
                     {/* Location Row */}

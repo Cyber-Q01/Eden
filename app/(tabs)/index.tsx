@@ -1,8 +1,8 @@
 import SearchBar from '@/components/SearchBar';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Dimensions, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import FilterModal from '../../components/FilterModal';
 import PropertyCard from '../../components/PropertyCard';
 import RetryOverlay from '../../components/RetryOverlay';
@@ -41,6 +41,18 @@ const HomeScreen = () => {
     });
 
     const { properties, loading: propertiesLoading, error: propertiesError, refetch: refetchProperties } = useProperties(filters);
+
+    // Pull-to-refresh: refetch the property feed (and favorites) on demand
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const onRefresh = useCallback(async () => {
+        if (isRefreshing) return;
+        setIsRefreshing(true);
+        try {
+            await Promise.allSettled([refetchProperties()]);
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [isRefreshing, refetchProperties]);
     const { favorites, addFavorite, removeFavorite } = useFavorites();
     const { profile, loading: profileLoading } = useProfile();
     const { unreadCount } = useNotifications();
@@ -98,7 +110,19 @@ const HomeScreen = () => {
 
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
+                        progressBackgroundColor="#FFFFFF"
+                    />
+                }
+            >
                 {/* Header Section */}
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
@@ -295,7 +319,7 @@ const HomeScreen = () => {
                     ) : propertiesError ? (
                         <RetryOverlay message="Couldn't load nearby properties." onRetry={refetchProperties} />
                     ) : (
-                        properties.slice(0, 5).map((item) => (
+                        properties.map((item) => (
                             <PropertyCard
                                 key={`nearby-${item.id}`}
                                 variant="horizontal"

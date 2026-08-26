@@ -165,9 +165,12 @@ export const useMyApplications = () => {
   ): Promise<{ error: string | null }> => {
     try {
       // 1. Direct Supabase insert
+      let ownerId: string | null = null;
+      let propertyTitle: string | null = null;
       if (user) {
-        const { data: prop } = await supabase.from('properties').select('landlord_id').eq('id', propertyId).maybeSingle();
-        const ownerId = prop?.landlord_id;
+        const { data: prop } = await supabase.from('properties').select('landlord_id, title').eq('id', propertyId).maybeSingle();
+        ownerId = prop?.landlord_id ?? null;
+        propertyTitle = prop?.title ?? null;
 
         const { error: insErr } = await supabase.from('property_applications').insert([
           {
@@ -193,6 +196,23 @@ export const useMyApplications = () => {
 
       queryClient.invalidateQueries({ queryKey: ['my-applications'] });
       queryClient.invalidateQueries({ queryKey: ['landlord-applications'] });
+
+      // 2. Push notification to the landlord (non-fatal — never blocks the submit)
+      if (ownerId) {
+        try {
+          await callEdgeFunction('send-push-notification', 'POST', {
+            user_id: ownerId,
+            title: 'New Application 🏠',
+            body: propertyTitle
+              ? `A new tenant applied for "${propertyTitle}". Open Eden to review.`
+              : 'A new tenant applied for your property. Open Eden to review.',
+            image: 'https://ytpggbkndnynyzashexk.supabase.co/storage/v1/object/public/property-images/EdenIcon.png',
+          });
+        } catch (pushErr) {
+          console.warn('[submitApplication] landlord push notice:', pushErr);
+        }
+      }
+
       return { error: null };
     } catch (e: any) {
       const err = await handleError(e);
@@ -365,9 +385,31 @@ export const useLandlordApplications = () => {
         );
       } catch {}
 
+      // Push notification to the tenant (non-fatal — never blocks the response)
+      try {
+        const { data: appRow } = await supabase
+          .from('property_applications')
+          .select('renter_id, property:properties(title)')
+          .eq('id', applicationId)
+          .maybeSingle();
+        if (appRow?.renter_id) {
+          const propTitle = (appRow.property as any)?.title || 'the property';
+          await callEdgeFunction('send-push-notification', 'POST', {
+            user_id: appRow.renter_id,
+            title: action === 'accept' ? 'Application Accepted 🎉' : 'Application Update',
+            body: action === 'accept'
+              ? `Your application for ${propTitle} was accepted. You can now proceed to payment in Eden.`
+              : `Your application for ${propTitle} was not accepted. You can explore other listings in Eden.`,
+            image: 'https://ytpggbkndnynyzashexk.supabase.co/storage/v1/object/public/property-images/EdenIcon.png',
+          });
+        }
+      } catch (pushErr) {
+        console.warn('[respondToApplication] tenant push notice:', pushErr);
+      }
+
       showSuccess(
         action === 'accept'
-          ? 'Application accepted! The tenant can now proceed to execute agreement.'
+          ? 'Application accepted! The tenant can now proceed to payment.'
           : 'Application declined.'
       );
       queryClient.invalidateQueries({ queryKey: ['landlord-applications'] });

@@ -332,10 +332,6 @@ const LandlordDashboard = () => {
                                     status={item.is_occupied ? 'Occupied' : 'Available'}
                                     views={item.view_count || 0}
                                     commission={role === 'AGENT' ? commVal : undefined}
-                                    onEdit={() => router.push({
-                                        pathname: '/landlord-screens/add-property',
-                                        params: { id: item.id }
-                                    })}
                                     onPress={() => router.push(`/property/${item.id}`)}
                                     containerStyle={{ marginRight: 16 }}
                                 />

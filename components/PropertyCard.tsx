@@ -20,7 +20,6 @@ interface PropertyCardProps {
     isLandlord?: boolean;
     views?: number;
     status?: string;
-    onEdit?: () => void;
     commission?: string;
 }
 
@@ -40,7 +39,6 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     isLandlord,
     views,
     status,
-    onEdit,
     commission
 }) => {
     const { colors } = useTheme();
@@ -122,19 +120,9 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                 )}
 
                 {isLandlord && status && (
-                    <View style={[styles.statusBadge, { backgroundColor: status.toLowerCase() === 'available' ? '#059669' : '#F59E0B' }]}>
-                        <Text style={styles.statusText}>{status}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: colors.card, borderColor: status.toLowerCase() === 'available' ? '#10B981' : '#F59E0B' }]}>
+                        <Text style={[styles.statusText, { color: status.toLowerCase() === 'available' ? '#10B981' : '#F59E0B' }]}>{status}</Text>
                     </View>
-                )}
-
-                {isLandlord && onEdit && (
-                    <TouchableOpacity
-                        style={styles.editButton}
-                        onPress={onEdit}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="pencil" size={14} color="#0F172A" />
-                    </TouchableOpacity>
                 )}
 
                 {!isLandlord && (
@@ -285,27 +273,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 99,
+        borderWidth: 1,
     },
     statusText: {
-        color: '#FFFFFF',
         fontSize: 10,
         fontWeight: '700',
-    },
-    editButton: {
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        width: 30,
-        height: 30,
-        borderRadius: 15,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
     },
     priceRowVertical: {
         flexDirection: 'row',

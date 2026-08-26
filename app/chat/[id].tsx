@@ -123,15 +123,6 @@ const ChatDetailScreen = () => {
                     <TouchableOpacity style={styles.headerIcon}>
                         <Ionicons name="call-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.headerIcon}
-                        onPress={() => router.push({
-                            pathname: '/shared-screens/AgreementScreen',
-                            params: { rental_id: 'temp-rental-id' }
-                        })}
-                    >
-                        <Ionicons name="document-text-outline" size={22} color={colors.primary} />
-                    </TouchableOpacity>
                     <TouchableOpacity style={styles.headerIcon}>
                         <Ionicons name="ellipsis-vertical" size={22} color={colors.text} />
                     </TouchableOpacity>

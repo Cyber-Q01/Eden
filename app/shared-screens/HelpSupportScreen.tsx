@@ -50,7 +50,7 @@ const FAQ_DATA: FAQItem[] = [
     {
         id: '3',
         question: 'How does escrow payment work',
-        answer: 'Your payment is held securely in escrow and only released to the landlord after successful verification of the property tenancy agreement terms.',
+        answer: 'Your payment is held securely in escrow and is released to the landlord once you confirm the property.',
     },
     {
         id: '4',

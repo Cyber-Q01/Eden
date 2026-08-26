@@ -149,7 +149,7 @@ const PaymentSuccessScreen = () => {
 
             <View style={[styles.footer, { borderTopColor: colors.border }]}>
                 <CustomButton
-                    title="Confirm Apartment (Countdown)"
+                    title="Release escrow"
                     onPress={handleGoToCountdown}
                     style={styles.primaryButton}
                 />
@@ -168,7 +168,7 @@ const PaymentSuccessScreen = () => {
                     onPress={handleViewLease}
                 >
                     <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
-                        View Lease Agreement
+                        View Lease
                     </Text>
                 </TouchableOpacity>
             </View>

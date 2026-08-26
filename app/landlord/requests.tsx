@@ -15,7 +15,6 @@ import {
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useAgreementStatuses } from '../../hooks/useAgreementStatuses';
 import { Application, useLandlordApplications } from '../../hooks/useApplications';
 
 const STATUS_CONFIG = {
@@ -38,7 +37,6 @@ export default function LandlordRentRequestsScreen() {
   const { user } = useAuth();
 
   const { applications, loading, refetch, respondToApplication } = useLandlordApplications();
-  const { agreementStatuses, refetch: refetchStatuses } = useAgreementStatuses(applications);
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'accepted' | 'declined'>('all');
   const [respondingId, setRespondingId] = useState<string | null>(null);
 
@@ -46,15 +44,13 @@ export default function LandlordRentRequestsScreen() {
     useCallback(() => {
       if (user) {
         refetch();
-        refetchStatuses();
       }
     }, [user])
   );
 
   const onRefresh = useCallback(() => {
     refetch();
-    refetchStatuses();
-  }, [refetch, refetchStatuses]);
+  }, [refetch]);
 
   const filteredApplications = useMemo(() => {
     return applications.filter((app) => {
@@ -181,22 +177,6 @@ export default function LandlordRentRequestsScreen() {
           </View>
         )}
 
-        {item.status === 'accepted' && (
-          <TouchableOpacity
-            style={[styles.manageBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}
-            onPress={() =>
-              router.push({
-                pathname: '/shared-screens/AgreementScreen',
-                params: { rental_id: item.id },
-              })
-            }
-          >
-            <Ionicons name="document-text-outline" size={15} color={colors.primary} />
-            <Text style={[styles.manageText, { color: colors.primary }]}>
-              View / Execute Tenancy Agreement
-            </Text>
-          </TouchableOpacity>
-        )}
       </TouchableOpacity>
     );
   };

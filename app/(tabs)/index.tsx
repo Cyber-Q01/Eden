@@ -24,7 +24,7 @@ const HERO_BANNERS = [
     { id: '5', color: '#7C3AED', title: 'Zero hidden fees', subtitle: 'Transparent pricing & direct contact' },
     { id: '6', color: '#DB2777', title: 'Fast application approval', subtitle: 'Apply online in under 2 minutes' },
     { id: '7', color: '#D97706', title: 'Find verified artisans', subtitle: 'Plumbers, electricians & repair services' },
-    { id: '8', color: '#059669', title: 'Instant lease agreements', subtitle: 'Digital legal documentation in-app' },
+    { id: '8', color: '#059669', title: 'Escrow-protected payments', subtitle: 'Funds released when you confirm' },
 ];
 
 const HomeScreen = () => {

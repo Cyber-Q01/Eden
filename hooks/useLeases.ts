@@ -19,8 +19,7 @@ export const useLeases = () => {
                     .from('rentals')
                     .select(`
                         *,
-                        property:properties(*, owner:users!properties_landlord_id_fkey(first_name, last_name)),
-                        agreement:tenancy_agreements(*)
+                        property:properties(*, owner:users!properties_landlord_id_fkey(first_name, last_name))
                     `)
                     .eq('renter_id', user.id)
                     .in('status', ['confirmed', 'awaiting_confirmation', 'released'])
@@ -50,7 +49,6 @@ export const useLeases = () => {
                 .select(`
                     *,
                     property:properties(*, owner:users!properties_landlord_id_fkey(first_name, last_name)),
-                    agreement:tenancy_agreements(*),
                     payments:payments(*)
                 `)
                 .eq('id', rentalId)

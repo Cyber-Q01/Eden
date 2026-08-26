@@ -118,7 +118,7 @@ const ApplicationSentScreen = () => {
                         • You will receive a push notification and SMS once they accept or decline (usually within 48 hours).
                     </Text>
                     <Text style={[styles.nextText, { color: colors.textSecondary, marginTop: 6 }]}>
-                        • If accepted, you will be invited to review and sign the digital lease agreement.
+                        • If accepted, you can pay directly — your funds are held safely in escrow until you confirm the property.
                     </Text>
                 </View>
 

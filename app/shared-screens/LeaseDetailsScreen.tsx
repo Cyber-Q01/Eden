@@ -127,18 +127,6 @@ const LeaseDetailsScreen = () => {
         }
     };
 
-    const viewAgreement = () => {
-        if (lease.agreement?.agreement_url) {
-            router.push({
-                pathname: '/shared-screens/WebViewScreen',
-                params: { url: lease.agreement.agreement_url, title: 'Tenancy Agreement' }
-            } as any);
-        } else {
-            showError({ type: 'unknown', title: 'Document Missing', message: 'Agreement document not found' });
-        }
-        setIsDocModalVisible(false);
-    };
-
     return (
         <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             <StatusBar barStyle={colors.background === '#000000' ? 'light-content' : 'dark-content'} />
@@ -286,20 +274,6 @@ const LeaseDetailsScreen = () => {
                                         <Ionicons name="close" size={24} color={colors.text} />
                                     </TouchableOpacity>
                                 </View>
-
-                                <TouchableOpacity
-                                    style={[styles.docItem, { borderBottomColor: colors.border }]}
-                                    onPress={viewAgreement}
-                                >
-                                    <View style={[styles.docIconBg, { backgroundColor: colors.primary + '15' }]}>
-                                        <Ionicons name="document-text-outline" size={22} color={colors.primary} />
-                                    </View>
-                                    <View style={styles.docInfo}>
-                                        <Text style={[styles.docName, { color: colors.text }]}>Tenancy Agreement</Text>
-                                        <Text style={[styles.docMeta, { color: colors.text + '60' }]}>Legal binding contract</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.text + '40'} />
-                                </TouchableOpacity>
 
                                 <TouchableOpacity
                                     style={[styles.docItem, { borderBottomColor: colors.border }]}

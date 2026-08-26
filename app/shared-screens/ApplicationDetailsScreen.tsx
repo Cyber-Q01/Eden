@@ -81,10 +81,10 @@ const ApplicationDetailsScreen = () => {
   const { application, loading, refetch } = useApplicationDetails(targetAppId, initialAppData);
   const { respondToApplication, responding } = useLandlordApplications();
 
-  const [agreementInfo, setAgreementInfo] = useState<{
-    rental_id: string; rental_status: string; status: string; fully_signed: boolean;
+  const [rentalInfo, setRentalInfo] = useState<{
+    id: string; status: string; confirmation_deadline: string | null; amount: number;
   } | null>(null);
-  const [fetchingAgreement, setFetchingAgreement] = useState(false);
+  const [fetchingRental, setFetchingRental] = useState(false);
 
   // ── In-app photo viewer ───────────────────────────────────────────────────
   const [photoViewer, setPhotoViewer] = useState<{ url: string; label: string } | null>(null);
@@ -93,33 +93,35 @@ const ApplicationDetailsScreen = () => {
   const [showCelebration, setShowCelebration] = useState(false);
   const celebrationChecked = useRef(false);
 
-  const fetchAgreementStatus = useCallback(async () => {
+  const fetchRentalStatus = useCallback(async () => {
     if (!application || application.status !== 'accepted') return;
-    setFetchingAgreement(true);
+    setFetchingRental(true);
     try {
+      // The rental record is created when the landlord accepts — the tenant
+      // pays directly against it (no agreement step)
       const { data: rental } = await supabase
-        .from('rentals').select('id, status').eq('application_id', application.id).single();
+        .from('rentals')
+        .select('id, status, confirmation_deadline, amount')
+        .eq('application_id', application.id)
+        .maybeSingle();
       if (rental) {
-        const { data: agreement } = await supabase
-          .from('tenancy_agreements')
-          .select('status, owner_signed_at, renter_signed_at')
-          .eq('rental_id', rental.id).single();
-        setAgreementInfo({
-          rental_id: rental.id, rental_status: rental.status,
-          status: agreement?.status ?? 'none',
-          fully_signed: agreement?.status === 'fully_signed' || (!!agreement?.owner_signed_at && !!agreement?.renter_signed_at),
+        setRentalInfo({
+          id: rental.id,
+          status: rental.status,
+          confirmation_deadline: rental.confirmation_deadline ?? null,
+          amount: Number(rental.amount || 0),
         });
       }
     } catch (e) {
-      console.log('Agreement status error:', e);
+      console.log('Rental status error:', e);
     } finally {
-      setFetchingAgreement(false);
+      setFetchingRental(false);
     }
   }, [application]);
 
   useEffect(() => {
-    fetchAgreementStatus();
-  }, [application, fetchAgreementStatus]);
+    fetchRentalStatus();
+  }, [application, fetchRentalStatus]);
 
   // Show celebration once for tenant when status is accepted
   useEffect(() => {
@@ -515,29 +517,37 @@ const ApplicationDetailsScreen = () => {
             </View>
           </View>
 
-          {/* Tenancy Agreement status / payment details if accepted */}
+          {/* Payment / escrow status if accepted */}
           {application.status === 'accepted' && (
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.cardHeader, { color: colors.text }]}>Agreement Status</Text>
+              <Text style={[styles.cardHeader, { color: colors.text }]}>Payment Status</Text>
               <View style={styles.agreementInfoRow}>
-                <View style={[styles.agreementIconCircle, { backgroundColor: agreementInfo?.fully_signed ? '#10B98115' : '#F59E0B15' }]}>
+                <View style={[styles.agreementIconCircle, { backgroundColor: rentalInfo && rentalInfo.status !== 'awaiting_payment' ? '#10B98115' : '#F59E0B15' }]}>
                   <Ionicons
-                    name={agreementInfo?.fully_signed ? "document-text" : "time-outline"}
+                    name={rentalInfo && rentalInfo.status !== 'awaiting_payment' ? "shield-checkmark" : "time-outline"}
                     size={20}
-                    color={agreementInfo?.fully_signed ? "#10B981" : "#F59E0B"}
+                    color={rentalInfo && rentalInfo.status !== 'awaiting_payment' ? "#10B981" : "#F59E0B"}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.agreementTitle, { color: colors.text }]}>
-                    {fetchingAgreement ? 'Checking...'
-                      : !agreementInfo ? 'Agreement not yet generated'
-                        : agreementInfo.fully_signed ? 'Agreement fully signed ✓'
-                          : 'Agreement partially signed'}
+                    {fetchingRental ? 'Checking...'
+                      : !rentalInfo ? 'Setting up payment...'
+                        : rentalInfo.status === 'awaiting_payment' ? 'Awaiting payment'
+                          : rentalInfo.status === 'awaiting_confirmation' ? 'Paid — funds in escrow'
+                            : rentalInfo.status === 'released' ? 'Escrow released ✓'
+                              : `Status: ${rentalInfo.status}`}
                   </Text>
                   <Text style={[styles.agreementSub, { color: colors.textSecondary }]}>
-                    {agreementInfo?.fully_signed
-                      ? 'Both parties have signed the tenancy agreement'
-                      : 'Waiting for all signatures'}
+                    {!rentalInfo
+                      ? 'Your payment is being prepared'
+                      : rentalInfo.status === 'awaiting_payment'
+                        ? isRenter ? 'You can pay directly — no agreement needed' : 'Waiting for the tenant to pay'
+                          : rentalInfo.status === 'awaiting_confirmation'
+                            ? 'Funds are protected in escrow until released'
+                              : rentalInfo.status === 'released'
+                                ? 'Funds have been released to the landlord'
+                                  : ''}
                   </Text>
                 </View>
               </View>
@@ -578,41 +588,74 @@ const ApplicationDetailsScreen = () => {
 
           {application.status === 'accepted' && (
             <View style={styles.acceptedActions}>
-              <TouchableOpacity
-                style={[styles.fullWidthBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}
-                onPress={() => router.push({
-                  pathname: '/shared-screens/AgreementScreen',
-                  params: { application_id: application.id }
-                })}
-              >
-                <Ionicons name="document-text-outline" size={18} color={colors.primary} />
-                <Text style={[styles.fullWidthBtnText, { color: colors.primary }]}>View Tenancy Agreement</Text>
-              </TouchableOpacity>
-
-              {isRenter && agreementInfo?.fully_signed && (
-                <TouchableOpacity
-                  style={[
-                    styles.fullWidthBtn,
-                    {
-                      backgroundColor: agreementInfo.rental_status === 'awaiting_payment' ? colors.primary : colors.border,
-                      marginTop: 10,
-                      borderColor: 'transparent',
-                    }
-                  ]}
-                  disabled={agreementInfo.rental_status !== 'awaiting_payment'}
-                  onPress={() => router.push({
-                    pathname: '/shared-screens/RentPaymentScreen',
-                    params: { rental_id: agreementInfo.rental_id }
-                  })}
-                >
-                  <Ionicons name="card-outline" size={18} color={agreementInfo.rental_status === 'awaiting_payment' ? '#fff' : colors.textSecondary} />
-                  <Text style={[styles.fullWidthBtnText, { color: agreementInfo.rental_status === 'awaiting_payment' ? '#fff' : colors.textSecondary }]}>
-                    {agreementInfo.rental_status === 'awaiting_payment' ? 'Proceed to Payment' : 'Payment Complete'}
-                  </Text>
-                  {agreementInfo.rental_status === 'awaiting_payment' && (
-                    <Ionicons name="arrow-forward" size={18} color="#fff" style={{ position: 'absolute', right: 16 }} />
+              {isRenter ? (
+                <>
+                  {/* Direct payment — no agreement step */}
+                  {rentalInfo?.status === 'awaiting_payment' && (
+                    <TouchableOpacity
+                      style={[styles.fullWidthBtn, { backgroundColor: colors.primary, borderColor: 'transparent' }]}
+                      onPress={() => router.push({
+                        pathname: '/shared-screens/RentPaymentScreen',
+                        params: { rental_id: rentalInfo.id }
+                      })}
+                    >
+                      <Ionicons name="card-outline" size={18} color="#fff" />
+                      <Text style={[styles.fullWidthBtnText, { color: '#fff' }]}>Proceed to Payment</Text>
+                      <Ionicons name="arrow-forward" size={18} color="#fff" style={{ position: 'absolute', right: 16 }} />
+                    </TouchableOpacity>
                   )}
-                </TouchableOpacity>
+
+                  {/* Paid — release the escrow */}
+                  {rentalInfo?.status === 'awaiting_confirmation' && (
+                    <TouchableOpacity
+                      style={[styles.fullWidthBtn, { backgroundColor: '#10B981', borderColor: 'transparent' }]}
+                      onPress={() => router.push({
+                        pathname: '/shared-screens/RentalConfirmationScreen',
+                        params: {
+                          rental_id: rentalInfo.id,
+                          confirmation_deadline: rentalInfo.confirmation_deadline || '',
+                          property_title: application.property?.title || 'Property',
+                          amount: String(rentalInfo.amount || 0),
+                        }
+                      })}
+                    >
+                      <Ionicons name="lock-open-outline" size={18} color="#fff" />
+                      <Text style={[styles.fullWidthBtnText, { color: '#fff' }]}>Release escrow</Text>
+                      <Ionicons name="arrow-forward" size={18} color="#fff" style={{ position: 'absolute', right: 16 }} />
+                    </TouchableOpacity>
+                  )}
+
+                  {rentalInfo?.status === 'released' && (
+                    <View style={[styles.fullWidthBtn, { backgroundColor: colors.border, opacity: 0.75 }]}>
+                      <Ionicons name="checkmark-circle-outline" size={18} color={colors.textSecondary} />
+                      <Text style={[styles.fullWidthBtnText, { color: colors.textSecondary }]}>Escrow Released</Text>
+                    </View>
+                  )}
+
+                  {(!fetchingRental && !rentalInfo) && (
+                    <View style={[styles.fullWidthBtn, { backgroundColor: colors.border }]}>
+                      <ActivityIndicator size="small" color={colors.textSecondary} />
+                      <Text style={[styles.fullWidthBtnText, { color: colors.textSecondary }]}>Setting up payment...</Text>
+                    </View>
+                  )}
+                </>
+              ) : (
+                // Landlord: payment status (no action needed)
+                <View style={[styles.fullWidthBtn, { backgroundColor: colors.primary + '15', borderColor: 'transparent' }]}>
+                  <Ionicons
+                    name={rentalInfo && rentalInfo.status !== 'awaiting_payment' ? "checkmark-circle-outline" : "card-outline"}
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.fullWidthBtnText, { color: colors.primary }]}>
+                    {fetchingRental || !rentalInfo
+                      ? 'Setting up payment'
+                      : rentalInfo.status === 'awaiting_payment' ? 'Awaiting tenant payment'
+                        : rentalInfo.status === 'awaiting_confirmation' ? 'Paid — funds in escrow'
+                          : rentalInfo.status === 'released' ? 'Escrow released ✓'
+                            : `Status: ${rentalInfo.status}`}
+                  </Text>
+                </View>
               )}
             </View>
           )}
@@ -744,14 +787,16 @@ const ApplicationDetailsScreen = () => {
               style={[celebStyles.primaryBtn, { backgroundColor: colors.primary }]}
               onPress={async () => {
                 await dismissCelebration();
-                router.push({
-                  pathname: '/shared-screens/AgreementScreen',
-                  params: { application_id: application!.id }
-                });
+                if (rentalInfo?.status === 'awaiting_payment') {
+                  router.push({
+                    pathname: '/shared-screens/RentPaymentScreen',
+                    params: { rental_id: rentalInfo.id }
+                  });
+                }
               }}
             >
-              <Ionicons name="document-text-outline" size={18} color="#fff" />
-              <Text style={celebStyles.primaryBtnText}>View Tenancy Agreement</Text>
+              <Ionicons name="card-outline" size={18} color="#fff" />
+              <Text style={celebStyles.primaryBtnText}>Proceed to Payment</Text>
             </TouchableOpacity>
             <TouchableOpacity style={celebStyles.secondaryBtn} onPress={dismissCelebration}>
               <Text style={[celebStyles.secondaryBtnText, { color: isDark ? '#94A3B8' : '#64748B' }]}>Got it, I'll check later</Text>

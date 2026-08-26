@@ -224,7 +224,7 @@ const EscrowReleasedScreen = () => {
                         • Bank transfer is initiated. Payouts reflect in landlord account within 1 business day.
                     </Text>
                     <Text style={[styles.nextText, { color: colors.textSecondary, marginTop: 6 }]}>
-                        • Your move-in inspection and signed tenancy agreement are archived in your Eden Documents wallet.
+                        • Your move-in confirmation is archived in your Eden Documents wallet.
                     </Text>
                 </View>
 

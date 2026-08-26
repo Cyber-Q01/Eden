@@ -10,7 +10,6 @@ import {
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useAgreementStatuses } from '../../hooks/useAgreementStatuses';
 import { Application, useLandlordApplications, useMyApplications } from '../../hooks/useApplications';
 
 const STATUS_CONFIG = {
@@ -30,24 +29,21 @@ const ApplicationsScreen = () => {
 
   const isRenter = role === 'TENANT';
   const { applications, loading, refetch } = isRenter ? renterHook : ownerHook;
-  const { agreementStatuses, refetch: refetchStatuses } = useAgreementStatuses(applications);
   const { respondToApplication, responding } = ownerHook;
   const [respondingId, setRespondingId] = useState<string | null>(null);
 
-  // Refetch when screen is focused (e.g. after signing agreement)
+  // Refetch when screen is focused
   useFocusEffect(
     useCallback(() => {
       if (user) {
         refetch();
-        refetchStatuses();
       }
     }, [user])
   );
 
   const onRefresh = useCallback(() => {
     refetch();
-    refetchStatuses();
-  }, [refetch, refetchStatuses]);
+  }, [refetch]);
 
   const handleRespond = (application: Application, action: 'accept' | 'decline') => {
     const label = action === 'accept' ? 'Accept' : 'Decline';
@@ -115,19 +111,6 @@ const ApplicationsScreen = () => {
               <Ionicons name={statusCfg.icon as any} size={12} color={statusCfg.color} />
               <Text style={[styles.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
             </View>
-
-            {/* Agreement signed indicator — simplified */}
-            {item.status === 'accepted' && (() => {
-              const info = agreementStatuses[item.id];
-              const isFullySigned = info?.fully_signed;
-              if (isFullySigned) return (
-                <View style={[styles.miniStatusBadge, { backgroundColor: '#d1fae5' }]}>
-                  <Ionicons name="checkmark-circle" size={10} color="#10b981" />
-                  <Text style={[styles.miniStatusText, { color: "#059669" }]}>Signed</Text>
-                </View>
-              );
-              return null;
-            })()}
 
             <Ionicons name="chevron-forward" size={20} color={colors.border} />
           </View>
@@ -252,18 +235,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
   },
   statusText: { fontSize: 11, fontWeight: '600' },
-  agreementBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  agreementBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14 },
   renterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
   renterAvatar: {
@@ -300,12 +271,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     padding: 12, borderRadius: 10,
   },
-  signedText: { fontSize: 13, fontWeight: '500', flex: 1 },
-  miniStatusBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12,
-  },
-  miniStatusText: { fontSize: 10, fontWeight: '600' },
 });
 
 export default ApplicationsScreen;

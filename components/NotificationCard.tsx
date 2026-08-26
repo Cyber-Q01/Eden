@@ -31,6 +31,7 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
   const config = ICON_CONFIG[notification.type] || ICON_CONFIG.system;
 
   const isApplication = notification.type === 'new_application';
+  const isUnread = !notification.read;
   // In dark mode, soften the icon background so it doesn't clash
   const iconBg = isDark ? config.color + '28' : config.bgColor;
 
@@ -39,7 +40,11 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
       style={[
         styles.container,
         {
-          backgroundColor: colors.card,
+          // Clear read/unread UI distinction: unread cards get a primary tint,
+          // read cards stay plain and are de-emphasised
+          backgroundColor: isUnread
+            ? (isDark ? colors.primary + '26' : colors.primary + '10')
+            : colors.card,
           borderBottomColor: colors.border,
         },
       ]}
@@ -66,21 +71,21 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
             style={[
               styles.title,
               {
-                color: colors.text,
-                fontWeight: notification.read ? '500' : '700',
+                color: isUnread ? colors.text : colors.textSecondary,
+                fontWeight: isUnread ? '700' : '500',
               },
             ]}
             numberOfLines={1}
           >
             {notification.title}
           </Text>
-          {!notification.read && (
+          {isUnread && (
             <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
           )}
         </View>
 
         <Text
-          style={[styles.message, { color: colors.textSecondary }]}
+          style={[styles.message, { color: isUnread ? colors.textSecondary : colors.textSecondary + '99' }]}
           numberOfLines={2}
         >
           {notification.message}
@@ -90,7 +95,7 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
           {formatTime(notification.created_at)}
         </Text>
 
-        {isApplication && !notification.read && (
+        {isApplication && isUnread && (
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: colors.primary }]}
             onPress={() => onPress(notification)}

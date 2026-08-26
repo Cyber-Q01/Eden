@@ -953,13 +953,14 @@ const PropertyDetailScreen = () => {
                 ) : (
                     <>
                         {/* Apply To Rent (Left Orange Pill Button)
-                            Flexible: a property can be applied to whether it is booked or not,
-                            whether the booking date has passed or not, and whether the booking
-                            is completed or not. Only genuinely unavailable (moderated) listings,
-                            sale listings, and repeat applications are blocked. */}
+                            Rule: a property MUST be booked (inspection booked by this
+                            tenant) before they can apply — whether the booking date has
+                            passed or not, and whether the booking is completed or not.
+                            Unbooked, unavailable, sale, and repeat applications are blocked. */}
                         {(() => {
                             const propertyUnavailable = property.status !== 'available' && property.status !== 'taken';
-                            const isApplyDisabled = propertyUnavailable || hasApplied || isSale;
+                            const notYetBooked = !isBooked;
+                            const isApplyDisabled = propertyUnavailable || notYetBooked || hasApplied || isSale;
 
                             const applyLabel = propertyUnavailable
                                 ? 'Property Unavailable'
@@ -967,7 +968,9 @@ const PropertyDetailScreen = () => {
                                     ? 'Applied ✓'
                                     : isSale
                                         ? 'For Sale'
-                                        : 'Apply To Rent';
+                                        : notYetBooked
+                                            ? 'Book Inspection First'
+                                            : 'Apply To Rent';
 
                             return (
                                 <TouchableOpacity

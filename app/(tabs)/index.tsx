@@ -16,12 +16,12 @@ import { useAdvertisements, MobileAdvertisement } from '../../hooks/useAdvertise
 
 const { width } = Dimensions.get('window');
 
-// NOTE: a static HERO_BANNERS array used to live here but was never rendered
+// NOTE: a static promo-banners array used to live here but was never rendered
 // (the home screen only shows the live advertisements carousel above). It was
-// removed for store listing prep because it contained unverifiable claims
-// ("thousands of properties", "100% scam free"). The fallback shown when the
-// database has no active ads is the single honest escrow banner in
-// hooks/useAdvertisements.ts — keep any static promo copy truthful there.
+// removed for store listing prep because it contained unverifiable marketing
+// claims. The fallback shown when the database has no active ads is the single
+// honest escrow banner in hooks/useAdvertisements.ts — keep any static promo
+// copy truthful there.
 
 const HomeScreen = () => {
     const { colors } = useTheme();

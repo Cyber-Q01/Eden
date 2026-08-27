@@ -1,4 +1,14 @@
 -- ============================================================================
+-- ⚠️ SUPERSEDED — DO NOT RUN THIS FILE.
+--
+-- The ad-push system was simplified on 2026-08-28: a push_sent_at flag on
+-- each advertisement + a Supabase-scheduled edge function (no Postgres cron,
+-- no pg_net, no shared secrets).
+--
+-- Run 20260828000000_simplify_ad_push.sql instead. (If you already ran this
+-- old file, the 20260828 file cleans everything it created.)
+--
+-- ----------------------------------------------------------------------------
 -- Ad push system: exactly-once, performance-safe fan-out of new-ad pushes
 --
 -- Why this does NOT slow your database down (unlike per-user loops in SQL):

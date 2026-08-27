@@ -1,144 +1,108 @@
-// send-ad-notification
-// Fan-out worker for new-ad push notifications (called async by the
-// Postgres cron function `queue_ad_pushes` via pg_net).
+// send-ad-notification (v2 — the simple version)
 //
-// Performance notes:
-//   * Runs entirely outside Postgres — the DB only stores a log row per ad.
-//   * Pushes are sent to the Expo Push API in batches of 100 (Expo's max),
-//     so even 10,000 users = ~100 fast API calls, not 10,000 DB round-trips.
-//   * Exactly-once: claims the ad row atomically via `claim_ad_push`;
-//     stale/failed rows are retried by the cron (max 5 attempts).
+// What it does on every scheduled run (default: every 15 minutes):
+//   1. Find ONE active ad whose push_sent_at flag is still NULL
+//      (oldest first, created within the last 30 days)
+//   2. Set the flag (push_sent_at = now()) BEFORE sending, so an ad can
+//      never be pushed twice
+//   3. Push the ad to every opted-in user (push_token set +
+//      push_notifications_enabled) via the Expo Push API in batches of 100
+//      (Expo's max per request) — the only network work, and it never
+//      touches Postgres in a loop
 //
-// Deploy:  supabase functions deploy send-ad-notification --no-verify-jwt
+// There is NO secret, NO shared token, NO claim table, NO Postgres cron.
+// Supabase SCHEDULES this function for you (its built-in scheduler via
+// --cron at deploy), and the push_sent_at flag is what keeps sends
+// exactly-once.
 //
-// Required env (project or function level):
-//   * AD_PUSH_SECRET — copy from: select value from public.ef_secrets
-//     where key = 'ad_push_secret';  (this function is closed to everyone
-//     else — only the Postgres cron function can call it)
-//   * EXPO_PUSH_ACCESS_TOKEN — your Expo push access token, i.e. the SAME
-//     token your existing send-push-notification function already uses.
-//     Find it under: Dashboard -> Edge Functions -> send-push-notification
-//     -> Environment Variables. (Common env names are all accepted below.)
+// Deploy (one command — note the --cron):
+//   supabase functions deploy send-ad-notification --no-verify-jwt --cron "*/15 * * * *"
+//   Dashboard alternative: Edge Functions -> send-ad-notification -> set the
+//   cron schedule to */15 * * * *  (JWT verification must stay OFF for the
+//   schedule to fire).
+//
+// Env (ONE variable, that's it):
+//   EXPO_PUSH_ACCESS_TOKEN — the SAME Expo token your existing
+//   send-push-notification function uses (Dashboard -> Edge Functions ->
+//   send-push-notification -> Environment Variables).
+//   (The other common env names are also accepted, just in case.)
+//
+// Manual trigger: after you add an ad, either wait for the next 15-minute
+// tick, or press "Invoke" on this function in the dashboard to push it now.
+//
+// Retry a failed ad (the flag is set before sending, so there is no
+// automatic retry — by design, keep it simple):
+//   update public.advertisements set push_sent_at = null where id = '<ad uuid>';
+//   the next run picks it up again.
+//
+// Check results:
+//   select id, title, status, push_sent_at, push_users
+//   from public.advertisements order by created_at desc limit 10;
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ad-push-secret',
-};
-
 const EXPO_PUSH_ENDPOINT = 'https://expo.push.com/v1';
 const BATCH_SIZE = 100; // Expo Push API accepts up to 100 notifications per request
+const AD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // only push ads created in the last 30 days
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     status,
   });
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405);
-  }
-
-  // Shared-secret gate — only the Postgres cron function (or you, from the
-  // dashboard with the same secret) may trigger this worker.
-  // NOTE: this is NOT the Expo token and NOT any user's device token. It is a
-  // random value we generate in the `ef_secrets` table so Postgres (pg_net) can
-  // prove to this function that it's the cron calling it. It must be set as the
-  // AD_PUSH_SECRET env var on this function to match.
-  const expectedSecret = Deno.env.get('AD_PUSH_SECRET') ?? '';
-  const providedSecret = req.headers.get('x-ad-push-secret') ?? '';
-  if (!expectedSecret) {
-    return jsonResponse(
-      {
-        error:
-          'AD_PUSH_SECRET is not configured on this function. Set it to the value from: ' +
-          "select value from public.ef_secrets where key = 'ad_push_secret'; " +
-          '(Dashboard -> Edge Functions -> send-ad-notification -> Manage secrets). ' +
-          'This is the cron shared secret, separate from the Expo token.',
-      },
-      401,
-    );
-  }
-  if (providedSecret !== expectedSecret) {
-    return jsonResponse(
-      {
-        error:
-          'Shared-secret mismatch: the x-ad-push-secret header does not match AD_PUSH_SECRET on this function. ' +
-          'If you are testing from the dashboard, send header x-ad-push-secret with the value from ef_secrets.',
-      },
-      401,
-    );
-  }
+Deno.serve(async (_req) => {
+  // No auth gate: Supabase's scheduler calls this, and the push_sent_at flag
+  // makes repeated/manual calls harmless — each ad is only ever sent once.
 
   try {
-    const { ad_id } = await req.json().catch(() => ({}));
-    if (!ad_id) {
-      return jsonResponse({ error: 'ad_id is required' }, 400);
-    }
-
-    // Service client — only used for DB access inside this trusted worker.
     const admin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // 1) Atomic claim — if another run already claimed or finished this ad, stop here
-    const { data: claim } = await admin.rpc('claim_ad_push', { p_ad_id: ad_id });
-    if (!claim) {
-      return jsonResponse({
-        success: true,
-        skipped: true,
-        reason: 'already claimed, already sent, or out of retry attempts',
-      });
-    }
-
-    // 2) Load the ad
-    const { data: ad, error: adError } = await admin
+    // 1) One unsent ad per run (oldest first).
+    const { data: ads, error: adsError } = await admin
       .from('advertisements')
-      .select('id, title, cta_text, media_url, status')
-      .eq('id', ad_id)
-      .maybeSingle();
-    if (adError) throw adError;
+      .select('id, title, cta_text, media_url')
+      .eq('status', 'active')
+      .is('push_sent_at', null)
+      .gt('created_at', new Date(Date.now() - AD_WINDOW_MS).toISOString())
+      .order('created_at', { ascending: true })
+      .limit(1);
+    if (adsError) throw adsError;
 
-    if (!ad) {
-      await admin
-        .from('ad_push_log')
-        .update({ status: 'sent', users_targeted: 0, error: 'ad row not found', updated_at: new Date().toISOString() })
-        .eq('ad_id', ad_id);
-      return jsonResponse({ success: true, sent: 0, reason: 'ad row not found' });
+    if (!ads || ads.length === 0) {
+      return jsonResponse({ ok: true, sent: 0, reason: 'no ads waiting to be pushed' });
+    }
+    const ad = ads[0];
+
+    // 2) Claim it — set the flag BEFORE sending so it can never be pushed twice.
+    const { data: claimed, error: claimError } = await admin
+      .from('advertisements')
+      .update({ push_sent_at: new Date().toISOString() })
+      .eq('id', ad.id)
+      .is('push_sent_at', null)
+      .select('id');
+    if (claimError) throw claimError;
+    if (!claimed || claimed.length === 0) {
+      return jsonResponse({ ok: true, sent: 0, reason: 'another run already claimed this ad' });
     }
 
-    const title = String(ad.title || 'Eden special offer').slice(0, 80);
-    const body = String(ad.cta_text || 'Open Eden to see the latest offers.').slice(0, 200);
-    const image =
-      typeof ad.media_url === 'string' && ad.media_url.startsWith('http') ? ad.media_url : undefined;
-
-    // 3) All opted-in users with a stored push token
+    // 3) Every opted-in user with a stored push token (one query).
     const { data: users, error: usersError } = await admin
       .from('users')
-      .select('id, push_token')
+      .select('push_token')
       .not('push_token', 'is', null)
       .eq('push_notifications_enabled', true);
     if (usersError) throw usersError;
 
-    const tokens = (users || []).map((u: any) => u.push_token).filter(Boolean);
-
+    const tokens = (users ?? []).map((u: any) => u.push_token).filter(Boolean);
     if (tokens.length === 0) {
-      await admin
-        .from('ad_push_log')
-        .update({ status: 'sent', users_targeted: 0, updated_at: new Date().toISOString() })
-        .eq('ad_id', ad_id);
-      return jsonResponse({ success: true, sent: 0, users: 0 });
+      return jsonResponse({ ok: true, ad_id: ad.id, users: 0, delivered: 0 });
     }
 
-    // 4) Batched fan-out to the Expo Push API (the only network work — off the DB)
-    // Accept the common env names so it works with the token you already have.
+    // 4) Batched fan-out to the Expo Push API (100 devices per request).
     const accessToken =
       Deno.env.get('EXPO_PUSH_ACCESS_TOKEN') ??
       Deno.env.get('EXPO_PUSH_TOKEN') ??
@@ -146,12 +110,18 @@ Deno.serve(async (req) => {
       Deno.env.get('EXPO_NOTIFICATION_TOKEN') ??
       '';
     if (!accessToken) {
-      // Leave row as 'sending' so the cron retries once the token is configured
+      // Reset the flag so the next run retries once the token is configured.
+      await admin.from('advertisements').update({ push_sent_at: null }).eq('id', ad.id);
       throw new Error(
         'Expo push token not set. Set EXPO_PUSH_ACCESS_TOKEN on this function ' +
-          '(copy the Expo token your send-push-notification function already uses).'
+          '(copy the Expo token your send-push-notification function already uses).',
       );
     }
+
+    const title = String(ad.title || 'Eden special offer').slice(0, 80);
+    const body = String(ad.cta_text || 'Open Eden to see the latest offers.').slice(0, 200);
+    const image =
+      typeof ad.media_url === 'string' && ad.media_url.startsWith('http') ? ad.media_url : undefined;
 
     let delivered = 0;
     let rejected = 0;
@@ -171,7 +141,7 @@ Deno.serve(async (req) => {
             title: `📢 ${title}`,
             body,
             image,
-            data: { sound: 'default', ad_id },
+            data: { sound: 'default', ad_id: ad.id },
           })),
         }),
       });
@@ -183,35 +153,18 @@ Deno.serve(async (req) => {
           else rejected += 1;
         }
       } else {
-        // One bad batch should not kill the whole run — keep sending the rest
+        // One bad batch should not kill the whole run — keep sending the rest.
         rejected += chunk.length;
         console.warn(`[send-ad-notification] Expo batch ${i / BATCH_SIZE} failed: ${res.status} ${JSON.stringify(payload).slice(0, 300)}`);
       }
     }
 
-    // 5) Report outcome back to the log (only a total failure retries)
-    const totalFailure = delivered === 0;
-    await admin
-      .from('ad_push_log')
-      .update({
-        status: totalFailure ? 'failed' : 'sent',
-        users_targeted: tokens.length,
-        users_delivered: delivered,
-        error: rejected > 0 ? `${rejected} of ${tokens.length} notifications were rejected by Expo` : null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('ad_id', ad_id);
+    // 5) Record reach on the ad row itself (no log table needed).
+    await admin.from('advertisements').update({ push_users: delivered }).eq('id', ad.id);
 
-    return jsonResponse({
-      success: true,
-      ad_id,
-      users: tokens.length,
-      delivered,
-      rejected,
-    });
+    console.log(`[send-ad-notification] pushed ad ${ad.id} ("${title}") to ${delivered}/${tokens.length} devices`);
+    return jsonResponse({ ok: true, ad_id: ad.id, users: tokens.length, delivered, rejected });
   } catch (e: any) {
-    // Leave the row as 'sending' — the cron function resurrects stale rows
-    // (15 min) and re-fires them, up to 5 attempts.
     console.error('[send-ad-notification] error:', e?.message || e);
     return jsonResponse({ error: String(e?.message || e) }, 500);
   }

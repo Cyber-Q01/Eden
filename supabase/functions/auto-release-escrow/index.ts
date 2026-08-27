@@ -14,21 +14,26 @@
 //   * Owners without a recipient code yet are skipped (left for the normal
 //     flow / support) instead of failing.
 //
-// Triggered by Postgres cron every 15 minutes (see migration
-// 20260827030000_auto_release_escrow.sql). The cron pings this endpoint
-// with a shared secret; the endpoint does all the work.
+// Triggered every 15 minutes by Supabase's built-in scheduler.
 //
-// Deploy:  supabase functions deploy auto-release-escrow --no-verify-jwt
-// Required env (dashboard -> Edge Functions -> auto-release-escrow):
-//   * AUTO_RELEASE_SECRET — copy from:
-//       select value from public.ef_secrets where key = 'auto_release_secret';
-//   * PAYSTACK_SECRET_KEY — same secret key your other Paystack functions use
+// Deploy (one command — note the --cron):
+//   supabase functions deploy auto-release-escrow --no-verify-jwt --cron "*/15 * * * *"
+//   Dashboard alternative: Edge Functions -> auto-release-escrow -> set the
+//   cron schedule to */15 * * * *  (JWT verification must stay OFF).
+//
+// Env (ONE variable):
+//   PAYSTACK_SECRET_KEY — same key your other Paystack functions use.
+//
+// NOTE: with no auth gate, invoking this URL early simply runs the same job
+// the schedule would run — it can ONLY release rentals whose 48h deadline
+// has already passed (checked in the query), and each release is an atomic
+// status claim, so nothing can be released early or paid out twice.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ef-secret',
+  'Access-Control-Allow-Headers': 'content-type',
 };
 
 const PAYSTACK_BASE = 'https://api.paystack.co';
@@ -40,16 +45,10 @@ const jsonResponse = (body: unknown, status = 200) =>
     status,
   });
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
-
-  // Shared-secret gate — only the Postgres cron function may trigger this.
-  const expected = Deno.env.get('AUTO_RELEASE_SECRET') ?? '';
-  const provided = req.headers.get('x-ef-secret') ?? '';
-  if (!expected || provided !== expected) {
-    return jsonResponse({ error: 'Unauthorized' }, 401);
-  }
+Deno.serve(async (_req) => {
+  // No auth gate: Supabase's scheduler calls this, and the job is safe to
+  // run anytime — it only touches rentals past their 48h deadline, with an
+  // atomic status claim preventing double payout.
 
   const service = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -58,6 +57,17 @@ Deno.serve(async (req) => {
   const paystackKey = Deno.env.get('PAYSTACK_SECRET_KEY') ?? '';
 
   const summary = { scanned: 0, released: 0, failed: 0, skipped: 0, details: [] as Array<Record<string, unknown>> };
+  const finish = () => {
+    // Full detail for the logs; the JSON response stays minimal (this
+    // endpoint is publicly reachable, so keep ids/references out of it).
+    console.log('[auto-release-escrow] run summary:', JSON.stringify(summary));
+    return jsonResponse({
+      scanned: summary.scanned,
+      released: summary.released,
+      failed: summary.failed,
+      skipped: summary.skipped,
+    });
+  };
 
   // Candidates (PostgREST or-filter: each top-level group is implicit AND):
   //  A) awaiting_confirmation, deadline > 10min past, untouched for > 5min
@@ -74,7 +84,7 @@ Deno.serve(async (req) => {
     .limit(MAX_PER_RUN);
   if (candErr) return jsonResponse({ error: candErr.message }, 500);
   summary.scanned = candidates?.length ?? 0;
-  if (!candidates || candidates.length === 0) return jsonResponse(summary);
+  if (!candidates || candidates.length === 0) return finish();
 
   for (const rental of candidates) {
     const isStuckConfirmed = rental.status === 'confirmed';
@@ -188,5 +198,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return jsonResponse(summary);
+  return finish();
 });

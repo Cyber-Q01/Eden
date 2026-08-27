@@ -19,7 +19,7 @@ the app ACTUALLY does (no inflated claims — reviewers verify).
 - [ ] **GEMINI_API_KEY** set on the `ai-assistant` EF in prod (the AI button is on every screen — reviewers WILL tap it).
 - [ ] **Demo accounts work** — run `supabase/demo-accounts.sql`, sign in with both in a dev build.
 - [ ] **Walk the tenant journey yourself** once (browse → inspection passes → apply) with the demo tenant.
-- [ ] **48h auto-release**: after deploying the auto-release EF (step 17), confirm in its logs that the cron pings; optionally create a test escrow with a short deadline to watch it release.
+- [ ] **48h auto-release**: after deploying the auto-release EF (step 15), confirm in its function logs that Supabase's scheduler runs it (every 15 min, no Postgres cron); optionally create a test escrow with a short deadline to watch it release.
 - [ ] FCM V1 credentials in the Expo dashboard (blocks Android push in prod).
 - [ ] Privacy + terms pages still live (they were).
 - [ ] **Review your currently-active ads** (Dashboard → `advertisements` table): the app is on the hook for the ads it displays — any ad with restricted/inappropriate content or a broken target link gets the *app* rejected, not the advertiser.
@@ -253,17 +253,15 @@ Have ready: org registration docs (CAC certificate for Shalom Datatech Ltd), you
 7. ☐ Run `20260826000000_auto_sync_property_status.sql` + `select public.sync_property_statuses();`
 8. ☐ Run `20260827000000_inspection_passes.sql`
 9. ☐ Deploy `initialize-inspection-pack` → `verify-inspection-pack` → `book-inspection` (LAST)
-10. ☐ Re-run the FIXED `20260827010000_ad_push_system.sql` (no jwt)
-11. ☐ `select value from public.ef_secrets where key = 'ad_push_secret';` → copy it
-12. ☐ `supabase functions deploy send-ad-notification --no-verify-jwt`
-13. ☐ Env on that EF: `AD_PUSH_SECRET` (from 11) + `EXPO_PUSH_ACCESS_TOKEN` (copy from your existing `send-push-notification` EF's envs)
-14. ☐ Unschedule the two OLD ad cron jobs (`select jobid, jobname from cron.job;` → `select cron.unschedule('<name>');`) — else double-sends
-15. ☐ Run `20260827020000_app_settings.sql` · toggle: `update public.app_settings set value='on'/'off' where key='maintenance_mode';` · announce builds: set `latest_version` (+ `release_notes`, store URLs)
-16. ☐ Run `20260827030000_auto_release_escrow.sql`
-17. ☐ `supabase functions deploy auto-release-escrow --no-verify-jwt` + envs: `AUTO_RELEASE_SECRET` (from ef_secrets) + `PAYSTACK_SECRET_KEY` (same key your other Paystack functions use)
-18. ☐ `supabase functions deploy delete-account` (normal JWT — no extra envs)
-19. ☐ Run `supabase/demo-accounts.sql` in production → test BOTH logins in a dev build
-20. ☐ Verify `GEMINI_API_KEY` env on the `ai-assistant` EF
+10. ☐ Run `20260828000000_simplify_ad_push.sql` — adds the `push_sent_at` flag to each ad and removes all the earlier ad-push/auto-release cron machinery (safe no matter what you already ran). Heads-up: existing active ads then get pushed one per 15 min (catch-up); to skip that: `update public.advertisements set push_sent_at = now() where push_sent_at is null;`
+11. ☐ `supabase functions deploy send-ad-notification --no-verify-jwt --cron "*/15 * * * *"` (one command — Supabase schedules it)
+12. ☐ Env on `send-ad-notification`: `EXPO_PUSH_ACCESS_TOKEN` (same token as your `send-push-notification`). That's the whole setup — no secrets, no copy-paste values. New ads push automatically within 15 min of going active (or press Invoke to push now). Check reach: `select title, push_sent_at, push_users from public.advertisements order by created_at desc limit 5;`
+13. ☐ Unschedule any LEFTOVER old ad cron jobs of your own (the pre-existing ones, if any): `select jobid, jobname from cron.job;` → `select cron.unschedule('<name>');` — else double-sends
+14. ☐ Run `20260827020000_app_settings.sql` · toggle: `update public.app_settings set value='on'/'off' where key='maintenance_mode';` · announce builds: set `latest_version` (+ `release_notes`, store URLs)
+15. ☐ `supabase functions deploy auto-release-escrow --no-verify-jwt --cron "*/15 * * * *"` + env `PAYSTACK_SECRET_KEY` (same key your other Paystack functions use). Also scheduled by Supabase — no DB step, no secret.
+16. ☐ `supabase functions deploy delete-account` (normal JWT — no extra envs)
+17. ☐ Run `supabase/demo-accounts.sql` in production → test BOTH logins in a dev build
+18. ☐ Verify `GEMINI_API_KEY` env on the `ai-assistant` EF
 
 ---
 

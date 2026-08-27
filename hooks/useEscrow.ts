@@ -1,5 +1,6 @@
 // hooks/useEscrow.ts
 // Tenant-side escrow: rent payments held in escrow (paid but not yet released).
+import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +13,13 @@ export const ESCROW_HELD_STATUSES: RentalStatus[] = [
     'disputed',
 ];
 
+export type OwnerBankAccount = {
+    bank_name?: string;
+    account_number?: string;
+};
+
 export type EscrowRental = Rental & {
+    updated_at?: string | null;
     property?: {
         id: string;
         title: string;
@@ -24,6 +31,7 @@ export type EscrowRental = Rental & {
         id: string;
         first_name: string;
         last_name: string;
+        bank_accounts?: OwnerBankAccount[] | OwnerBankAccount | null;
     } | null;
 };
 
@@ -38,7 +46,7 @@ export const useTenantRentals = () => {
             const { data: rows, error } = await supabase
                 .from('rentals')
                 .select(
-                    '*, property:properties(*), owner:users!owner_id(id, first_name, last_name)'
+                    '*, property:properties(*), owner:users!owner_id(id, first_name, last_name, bank_accounts(bank_name, account_number))'
                 )
                 .eq('renter_id', user.id)
                 .order('created_at', { ascending: false });
@@ -48,10 +56,11 @@ export const useTenantRentals = () => {
         enabled: !!user,
     });
 
-    const refresh = async () => {
+    // Stable identity — safe to use in useFocusEffect deps without re-render loops
+    const refresh = useCallback(async () => {
         await refetch();
         queryClient.invalidateQueries({ queryKey: ['badge-unreleased-escrow'] });
-    };
+    }, [refetch, queryClient]);
 
     return {
         rentals: (data ?? []) as EscrowRental[],

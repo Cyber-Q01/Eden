@@ -1,24 +1,20 @@
 import BackButton from '@/components/BackButton';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     FlatList,
     Image,
-    Modal,
     RefreshControl,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
 import { useTenantRentals, EscrowRental, ESCROW_HELD_STATUSES } from '../../hooks/useEscrow';
-import { usePayment } from '../../hooks/usePayment';
 
 const formatNaira = (n: number | string | undefined) =>
     '₦' + Number(n || 0).toLocaleString();
@@ -40,61 +36,73 @@ const getStatusMeta = (status: string) =>
 
 const isHeld = (status: string) => (ESCROW_HELD_STATUSES as string[]).includes(status);
 
+const formatReleaseTime = (dateStr?: string | null) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return (
+        d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) +
+        ' • ' +
+        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    );
+};
+
 const EscrowScreen = () => {
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const { rentals, loading, refresh } = useTenantRentals();
-    const { confirmRental, disputeRental, loading: paymentLoading } = usePayment();
 
-    const [busyId, setBusyId] = useState<string | null>(null);
-    const [disputeTarget, setDisputeTarget] = useState<EscrowRental | null>(null);
-    const [disputeReason, setDisputeReason] = useState('');
+    // Keep the list + badge fresh every time the tab is focused (stable callback — no re-render loops)
+    useFocusEffect(
+        useCallback(() => {
+            refresh();
+        }, [refresh])
+    );
 
     const heldRentals = rentals.filter((r) => isHeld(r.status));
     const totalInEscrow = heldRentals.reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
-    const handleConfirm = (rental: EscrowRental) => {
-        if (busyId) return;
-        const landlordName = rental.owner
-            ? `${rental.owner.first_name || ''} ${rental.owner.last_name || ''}`.trim() || 'the landlord'
-            : 'the landlord';
-        Alert.alert(
-            'Confirm & Release Escrow',
-            `By confirming, you agree the property matches its listing and ${formatNaira(
-                rental.amount
-            )} held in escrow will be released to ${landlordName}. This cannot be undone.`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Yes, Release Funds',
-                    onPress: async () => {
-                        setBusyId(rental.id);
-                        const ok = await confirmRental(rental.id);
-                        if (ok) await refresh();
-                        setBusyId(null);
-                    },
+    // Cards route to the dedicated screens — escrow is only releasable on its own screen, never from this tab
+    const openRental = (item: EscrowRental) => {
+        if (item.status === 'released') {
+            const owner = item.owner;
+            const releasedTo = owner
+                ? `${owner.first_name || ''} ${owner.last_name || ''}`.trim()
+                : '';
+            let bank = '';
+            if (owner?.bank_accounts) {
+                const ba = Array.isArray(owner.bank_accounts)
+                    ? owner.bank_accounts[0]
+                    : owner.bank_accounts;
+                if (ba?.account_number) {
+                    bank = `${ba.bank_name || 'Bank'} **** ${String(ba.account_number).slice(-4)}`.trim();
+                }
+            }
+            router.push({
+                pathname: '/shared-screens/EscrowReleasedScreen',
+                params: {
+                    amount: String(item.amount || 0),
+                    released_to: releasedTo,
+                    bank,
+                    release_time: formatReleaseTime(item.updated_at),
+                    reference: item.transfer_reference || 'REL-' + item.id.slice(0, 8).toUpperCase(),
+                    landlord_id: owner?.id || '',
+                    rental_id: item.id,
                 },
-            ]
-        );
-    };
-
-    const openDispute = (rental: EscrowRental) => {
-        if (busyId) return;
-        setDisputeReason('');
-        setDisputeTarget(rental);
-    };
-
-    const submitDispute = async () => {
-        if (!disputeTarget) return;
-        if (!disputeReason.trim()) {
-            Alert.alert('Required', 'Please describe the issue before submitting.');
+            });
             return;
         }
-        setBusyId(disputeTarget.id);
-        const ok = await disputeRental(disputeTarget.id, disputeReason.trim());
-        setBusyId(null);
-        setDisputeTarget(null);
-        if (ok) await refresh();
+
+        // Funds still in escrow (awaiting_confirmation / confirmed) → the release-escrow screen
+        router.push({
+            pathname: '/shared-screens/RentalConfirmationScreen',
+            params: {
+                rental_id: item.id,
+                confirmation_deadline: item.confirmation_deadline || '',
+                property_title: item.property?.title || 'Property',
+                amount: String(item.amount || 0),
+            },
+        });
     };
 
     const handlePayNow = (rental: EscrowRental) => {
@@ -107,18 +115,20 @@ const EscrowScreen = () => {
     const renderRental = ({ item }: { item: EscrowRental }) => {
         const meta = getStatusMeta(item.status);
         const held = isHeld(item.status);
+        const tappable = held || item.status === 'released';
         const propertyImage = item.property?.images?.[0];
         const title = item.property?.title || 'Rented Property';
         const location = item.property?.location || 'Lagos, Nigeria';
-        const busy = busyId === item.id || paymentLoading;
-        const deadline =
-            held && item.confirmation_deadline
-                ? new Date(item.confirmation_deadline)
-                : null;
+        const deadline = held && item.confirmation_deadline ? new Date(item.confirmation_deadline) : null;
         const deadlineOk = deadline && !isNaN(deadline.getTime());
 
         return (
-            <View style={[styles.card, { backgroundColor: colors.card, borderLeftColor: meta.color }]}>
+            <TouchableOpacity
+                style={[styles.card, { backgroundColor: colors.card, borderLeftColor: meta.color }]}
+                activeOpacity={tappable ? 0.75 : 1}
+                disabled={!tappable}
+                onPress={tappable ? () => openRental(item) : undefined}
+            >
                 <View style={styles.cardHeader}>
                     {propertyImage ? (
                         <Image source={{ uri: propertyImage }} style={styles.propertyImage} />
@@ -138,9 +148,14 @@ const EscrowScreen = () => {
                             {formatNaira(item.amount)}
                         </Text>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: meta.color + '15' }]}>
-                        <Ionicons name={meta.icon} size={13} color={meta.color} />
-                        <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+                    <View style={styles.cardHeaderRight}>
+                        <View style={[styles.statusBadge, { backgroundColor: meta.color + '15' }]}>
+                            <Ionicons name={meta.icon} size={13} color={meta.color} />
+                            <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+                        </View>
+                        {tappable && (
+                            <Ionicons name="chevron-forward" size={18} color={isDark ? '#475569' : '#CBD5E1'} />
+                        )}
                     </View>
                 </View>
 
@@ -165,6 +180,14 @@ const EscrowScreen = () => {
                     )}
                 </View>
 
+                {held && (
+                    <View style={[styles.noteBox, { backgroundColor: '#2563EB12', borderColor: '#2563EB30' }]}>
+                        <Ionicons name="lock-closed-outline" size={14} color="#2563EB" />
+                        <Text style={[styles.noteText, { color: colors.textSecondary }]}>
+                            Funds are held safely in escrow. Tap to open the release screen and confirm when ready.
+                        </Text>
+                    </View>
+                )}
                 {item.status === 'disputed' && (
                     <View style={[styles.noteBox, { backgroundColor: '#EF444412', borderColor: '#EF444430' }]}>
                         <Ionicons name="information-circle-outline" size={14} color="#EF4444" />
@@ -185,33 +208,16 @@ const EscrowScreen = () => {
                     <View style={[styles.noteBox, { backgroundColor: '#10B98112', borderColor: '#10B98130' }]}>
                         <Ionicons name="checkmark-circle-outline" size={14} color="#10B981" />
                         <Text style={[styles.noteText, { color: colors.textSecondary }]}>
-                            Funds were released to the landlord. You are done with this payment.
+                            Released — tap to view the transfer details and receipt.
                         </Text>
                     </View>
                 )}
-
-                {(item.status === 'awaiting_confirmation' || item.status === 'confirmed') && (
-                    <View style={styles.actionsRow}>
-                        <TouchableOpacity
-                            style={[styles.releaseBtn, { backgroundColor: '#10B981' }]}
-                            onPress={() => handleConfirm(item)}
-                            disabled={busy}
-                        >
-                            {busy ? (
-                                <ActivityIndicator size="small" color="#FFF" />
-                            ) : (
-                                <Ionicons name="checkmark" size={16} color="#FFF" />
-                            )}
-                            <Text style={styles.releaseBtnText}>Confirm &amp; Release</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.disputeBtn, { borderColor: '#EF4444' }]}
-                            onPress={() => openDispute(item)}
-                            disabled={busy}
-                        >
-                            <Ionicons name="warning-outline" size={15} color="#EF4444" />
-                            <Text style={[styles.disputeBtnText, { color: '#EF4444' }]}>Dispute</Text>
-                        </TouchableOpacity>
+                {item.status === 'refunded' && (
+                    <View style={[styles.noteBox, { backgroundColor: '#64748B12', borderColor: '#64748B30' }]}>
+                        <Ionicons name="refresh-outline" size={14} color="#64748B" />
+                        <Text style={[styles.noteText, { color: colors.textSecondary }]}>
+                            This payment was refunded back to you.
+                        </Text>
                     </View>
                 )}
 
@@ -221,18 +227,17 @@ const EscrowScreen = () => {
                             style={[styles.payBtn, { backgroundColor: colors.primary }]}
                             onPress={() => handlePayNow(item)}
                         >
-                            <Ionicons name="card-outline" size={16} color="#FFF" />
                             <Text style={styles.payBtnText}>Pay Now</Text>
                             <Ionicons name="arrow-forward" size={16} color="#FFF" />
                         </TouchableOpacity>
                     </View>
                 )}
-            </View>
+            </TouchableOpacity>
         );
     };
 
     return (
-        <ScreenWrapper withScrollView={false} style={{ backgroundColor: colors.background }}>
+        <ScreenWrapper withScrollView={true} style={{ backgroundColor: colors.background }}>
             {/* Header */}
             <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
                 <BackButton />
@@ -289,52 +294,6 @@ const EscrowScreen = () => {
                     <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.primary} />
                 }
             />
-
-            {/* Dispute modal */}
-            <Modal
-                visible={!!disputeTarget}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setDisputeTarget(null)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[styles.modalTitle, { color: colors.text }]}>Raise a Dispute</Text>
-                        <Text style={[styles.modalSub, { color: colors.textSecondary }]}>
-                            Explain what is wrong with the property or payment. Our team reviews every dispute within 24 hours.
-                        </Text>
-                        <TextInput
-                            style={[styles.modalInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
-                            placeholder="Describe the issue (e.g. property differs from listing, landlord asking for cash outside Eden, etc.)..."
-                            placeholderTextColor={colors.textSecondary + '99'}
-                            multiline
-                            numberOfLines={4}
-                            value={disputeReason}
-                            onChangeText={setDisputeReason}
-                        />
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                                onPress={() => setDisputeTarget(null)}
-                                disabled={!!busyId}
-                            >
-                                <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.modalSubmitBtn}
-                                onPress={submitDispute}
-                                disabled={!!busyId}
-                            >
-                                {busyId ? (
-                                    <ActivityIndicator size="small" color="#FFF" />
-                                ) : (
-                                    <Text style={styles.modalSubmitText}>Submit Dispute</Text>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
         </ScreenWrapper>
     );
 };
@@ -429,6 +388,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 12,
     },
+    cardHeaderRight: {
+        alignItems: 'flex-end',
+        gap: 8,
+    },
     propertyImage: {
         width: 54,
         height: 54,
@@ -496,40 +459,9 @@ const styles = StyleSheet.create({
         lineHeight: 16,
     },
     actionsRow: {
-        flexDirection: 'row',
-        gap: 10,
         marginTop: 12,
     },
-    releaseBtn: {
-        flex: 1,
-        height: 46,
-        borderRadius: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-    },
-    releaseBtnText: {
-        color: '#FFF',
-        fontSize: 13.5,
-        fontWeight: '700',
-    },
-    disputeBtn: {
-        height: 46,
-        borderRadius: 14,
-        borderWidth: 1,
-        paddingHorizontal: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 5,
-    },
-    disputeBtnText: {
-        fontSize: 13.5,
-        fontWeight: '700',
-    },
     payBtn: {
-        flex: 1,
         height: 46,
         borderRadius: 14,
         flexDirection: 'row',
@@ -541,8 +473,6 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 14,
         fontWeight: '700',
-        flex: 1,
-        textAlign: 'center',
     },
     empty: {
         alignItems: 'center',
@@ -562,66 +492,6 @@ const styles = StyleSheet.create({
     loadingWrap: {
         paddingTop: 80,
         alignItems: 'center',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(15, 23, 42, 0.55)',
-        justifyContent: 'flex-end',
-    },
-    modalCard: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        borderWidth: 1,
-        padding: 20,
-        paddingBottom: 30,
-    },
-    modalTitle: {
-        fontSize: 17,
-        fontWeight: '700',
-    },
-    modalSub: {
-        fontSize: 12.5,
-        lineHeight: 17,
-        marginTop: 6,
-        marginBottom: 12,
-    },
-    modalInput: {
-        borderWidth: 1,
-        borderRadius: 12,
-        padding: 12,
-        fontSize: 13.5,
-        minHeight: 90,
-        textAlignVertical: 'top',
-    },
-    modalActions: {
-        flexDirection: 'row',
-        gap: 10,
-        marginTop: 14,
-    },
-    modalCancelBtn: {
-        flex: 1,
-        height: 48,
-        borderRadius: 14,
-        borderWidth: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    modalCancelText: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    modalSubmitBtn: {
-        flex: 1,
-        height: 48,
-        borderRadius: 14,
-        backgroundColor: '#EF4444',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    modalSubmitText: {
-        color: '#FFF',
-        fontSize: 14,
-        fontWeight: '700',
     },
 });
 

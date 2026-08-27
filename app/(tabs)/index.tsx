@@ -172,6 +172,12 @@ const HomeScreen = () => {
                                 onPress={() => handleBannerPress(banner)}
                                 style={[styles.heroBanner, { backgroundColor: banner.color || '#1D4ED8' }]}
                             >
+                                {/* Ad label — required by Google Play (in-app ads must
+                                    be clearly identifiable). Applied to every banner
+                                    in this carousel; the DB only ever holds ads. */}
+                                <View style={styles.adLabel}>
+                                    <Text style={styles.adLabelText}>Ad</Text>
+                                </View>
                                 {banner.mediaUrl && (
                                     <Image
                                         source={{ uri: banner.mediaUrl }}
@@ -453,6 +459,22 @@ const styles = StyleSheet.create({
         height: 180,
         borderRadius: 20,
         overflow: 'hidden',
+    },
+    adLabel: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        zIndex: 5,
+    },
+    adLabelText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
     heroGradient: {
         flex: 1,

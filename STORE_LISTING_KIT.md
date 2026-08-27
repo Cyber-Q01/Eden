@@ -22,6 +22,7 @@ the app ACTUALLY does (no inflated claims — reviewers verify).
 - [ ] **48h auto-release**: after deploying the auto-release EF (step 17), confirm in its logs that the cron pings; optionally create a test escrow with a short deadline to watch it release.
 - [ ] FCM V1 credentials in the Expo dashboard (blocks Android push in prod).
 - [ ] Privacy + terms pages still live (they were).
+- [ ] **Review your currently-active ads** (Dashboard → `advertisements` table): the app is on the hook for the ads it displays — any ad with restricted/inappropriate content or a broken target link gets the *app* rejected, not the advertiser.
 
 ---
 
@@ -65,6 +66,8 @@ Payments: inspection passes and rent are paid with live Paystack charges
 (no IAP). Rent goes into secure escrow and is released to the landlord when
 the tenant confirms the property (automatic release after a 48-hour window).
 The AI assistant is powered by Google Gemini. Push notifications use Expo.
+The app shows third-party banner ads (labeled "Ad"); they are identical for
+all users and not personalized.
 ```
 
 **Attachment:** optional — a short Loom/video of the tenant flow.
@@ -98,7 +101,10 @@ The AI assistant is powered by Google Gemini. Push notifications use Expo.
 | Identifiers (ad ID) | No | — | — | — |
 
 **Data used to track you across other companies' apps/websites: None.**
-**Data used for targeted advertising: None.**
+**Data used for targeted advertising: None.** ← stays correct even though the app
+**shows third-party ads**: no user data is collected or used for ads, there is no
+ad SDK, and ads are identical for all users (non-personalized). All in-app ad
+banners are labeled "Ad".
 
 **Third parties receiving data (for their own use / for your app's purposes):**
 | Party | Data | Purpose |
@@ -182,6 +188,12 @@ Privacy: web-portal-eta-smoky.vercel.app/privacy
 | Device ID | Yes | Yes | Supabase, Expo | Push notifications |
 | Location | **No** | — | — | — (permission not requested) |
 
+**Ads (separate block in the form):**
+- Your app contains ads? **Yes** — third-party ads shown as in-app banners + push notifications.
+- Ads personalized using user data? **No** — identical ads shown to all users, no targeting, no profiling.
+- Which SDK serves the ads? **None** — self-served from your own Supabase `advertisements` table (no AdMob/Facebook/Unity SDK), so **no extra data-sharing entries are needed for ads**.
+- All in-app ad banners carry a visible "Ad" label (Play requirement).
+
 For every "Yes": **"Is this use necessary for the app to work?" = YES.**
 **Encryption in transit: Yes. At rest: Yes.**
 **Retention:** "We retain data while the account is active; on deletion, personal data is deleted and financial transaction records are kept anonymized as required by law."
@@ -199,7 +211,7 @@ For every "Yes": **"Is this use necessary for the app to work?" = YES.**
 - **Profanity: Mild** (private 1:1 chats between users)
 - **Chat/communications: Yes** — "1:1 private chat with known users (tenant ↔ landlord, tenant ↔ support); no public rooms"
 - **Real-world purchases: Yes** — "rent and inspection passes paid via Paystack (external payment for real-world goods/services — not in-app purchases)"
-- **Advertising:** if your ad slots only show YOUR own promos → **No**; if you run third-party ads → **Yes, in-app text/image ads, not personalized**
+- **Advertising: YES** — "In-app banner ads + ad push notifications. **Not personalized** — the same ads are shown to all users; no user data is used for ad targeting. Self-served from our own database (no AdMob or other ad SDK). All banners are clearly labeled 'Ad'."
 - **Location data collected: No**
 - **Subscriptions: No**
 

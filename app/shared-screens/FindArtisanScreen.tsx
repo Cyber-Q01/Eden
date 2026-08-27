@@ -44,120 +44,8 @@ interface Artisan {
     experienceYears?: number;
 }
 
-const FALLBACK_ARTISANS: Artisan[] = [
-    {
-        id: 'a1',
-        name: 'Emeka Okafor',
-        trade: 'Plumber',
-        rating: 4.9,
-        completedJobs: 142,
-        location: 'Eti-Osa, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-        bio: 'Over 8 years experience in residential & commercial plumbing. Vetted expert in fixing leaks, water pumps, heater installation, and modern bathroom fixtures.',
-        phone: '08031234567',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '7042',
-        experienceYears: 8,
-    },
-    {
-        id: 'a2',
-        name: 'Babatunde Lawal',
-        trade: 'Electrician',
-        rating: 4.85,
-        completedJobs: 108,
-        location: 'Ikeja, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-        bio: 'Certified electrical technician. Inverter setups, 3-phase DB balancing, circuit breakers, conduit wiring repairs, and surge protection.',
-        phone: '08029876543',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '4819',
-        experienceYears: 7,
-    },
-    {
-        id: 'a3',
-        name: 'Sunday Ogundipe',
-        trade: 'AC Technician',
-        rating: 4.95,
-        completedJobs: 96,
-        location: 'Victoria Island, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&auto=format&fit=crop&q=80',
-        bio: 'HVAC & Inverter AC specialist. Multi-split AC installation, copper line vacuuming, chemical coil wash, and R410A gas refills.',
-        phone: '08145556677',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '2790',
-        experienceYears: 6,
-    },
-    {
-        id: 'a4',
-        name: 'Ibrahim Sani',
-        trade: 'Generator Repair',
-        rating: 4.9,
-        completedJobs: 92,
-        location: 'Mainland, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
-        bio: 'Heavy-duty diesel and petrol generator specialist (Perkins, Mikano, CAT, Firman, Lutian). Routine maintenance & AVR diagnosis.',
-        phone: '07031112233',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '6401',
-        experienceYears: 9,
-    },
-    {
-        id: 'a5',
-        name: 'Chukwudi Eze',
-        trade: 'Carpenter',
-        rating: 4.75,
-        completedJobs: 78,
-        location: 'Surulere, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&auto=format&fit=crop&q=80',
-        bio: 'Precision fitted wardrobes, kitchen cabinets, hardwood door installations, roofing timber structural repair, and parquet flooring.',
-        phone: '08098887766',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '9154',
-        experienceYears: 7,
-    },
-    {
-        id: 'a6',
-        name: 'Kazeem Bello',
-        trade: 'Painter',
-        rating: 4.9,
-        completedJobs: 73,
-        location: 'Ajah, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&auto=format&fit=crop&q=80',
-        bio: 'Decorative painting, screeding, POP ceiling finish, satin and gloss coatings for residential interiors and exterior facades.',
-        phone: '08189990011',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '3812',
-        experienceYears: 5,
-    },
-    {
-        id: 'a7',
-        name: 'Folake Adeleke',
-        trade: 'Interior Design',
-        rating: 4.98,
-        completedJobs: 56,
-        location: 'Ikoyi, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-        bio: 'Luxury residential interior design, spatial planning, 3D render styling, POP ceiling fit-outs, and accent lighting.',
-        phone: '08031114455',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '8421',
-        experienceYears: 7,
-    },
-    {
-        id: 'a8',
-        name: 'Usman Danladi',
-        trade: 'Dispatch Rider',
-        rating: 4.92,
-        completedJobs: 145,
-        location: 'Victoria Island, Lagos',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-        bio: 'Fast property courier and document logistics. Tenancy contract delivery, key handovers, and express parcel transport.',
-        phone: '07089991122',
-        kycStatus: 'verified',
-        dispatchSecurityPin: '1934',
-        experienceYears: 5,
-    }
-];
+// NOTE: No seeded/fallback artisan data. The list shows ONLY real, KYC-verified
+// artisans stored in the 'artisans' table (empty state shown when none exist).
 
 const CATEGORIES = [
     { id: 'all', name: 'All Trades', icon: 'grid-outline' },
@@ -180,8 +68,8 @@ const FindArtisanScreen = () => {
     const { showSuccess, showError } = useToast();
     const { leases, fetchLeases } = useLeases();
 
-    const [artisans, setArtisans] = useState<Artisan[]>(FALLBACK_ARTISANS);
-    const [loading, setLoading] = useState(false); // false: fallback renders instantly
+    const [artisans, setArtisans] = useState<Artisan[]>([]);
+    const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState(params.category || 'all');
     const [selectedArtisan, setSelectedArtisan] = useState<Artisan | null>(null);
@@ -212,6 +100,7 @@ const FindArtisanScreen = () => {
         });
 
         // 2. Background DB refresh — does NOT block the UI
+        // (also clears any stale cache when the DB has no available artisans)
         loadArtisans();
 
         // 3. Decouple lease fetch — doesn't affect artisan display
@@ -254,13 +143,16 @@ const FindArtisanScreen = () => {
                 }));
                 setArtisans(mapped);
                 AsyncStorage.setItem('eden_cached_artisans_v2', JSON.stringify(mapped)).catch(() => { });
+            } else {
+                // DB is the source of truth: no available artisans = empty state.
+                // Never show invented profiles.
+                setArtisans([]);
+                AsyncStorage.removeItem('eden_cached_artisans_v2').catch(() => { });
             }
-            // if DB returns empty, fallback already showing — no change needed
         } catch (e) {
-            console.warn('Failed to load live artisans, fallback in use:', e);
-            // fallback is already in state — do nothing
+            console.warn('Failed to load live artisans:', e);
+            // Keep whatever is in state (possibly cache) — do not fake data.
         }
-        // Note: we deliberately do NOT call setLoading here — loading is always false
     };
 
     // Filter artisans based on category and search query
@@ -313,7 +205,7 @@ const FindArtisanScreen = () => {
                 property_title: propertyTitle,
                 property_address: propertyAddress,
                 client_name: user?.email ? user.email.split('@')[0] : 'Eden Client',
-                client_phone: user?.phone || '08012345678',
+                client_phone: user?.phone || '',
                 client_email: user?.email || null,
                 status: 'in_progress',
                 priority: 'medium',
@@ -691,7 +583,9 @@ const FindArtisanScreen = () => {
 
                         {/* Direct Contact Card */}
                         <View style={[styles.contactCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                            <Text style={[styles.contactLabel, { color: colors.textSecondary }]}>Artisan Direct Contact</Text>
+                            <Text style={[styles.contactLabel, { color: colors.textSecondary }]}>
+                                {selectedArtisan?.phone ? 'Artisan Direct Contact' : 'Eden Support (will relay to the artisan)'}
+                            </Text>
                             <TouchableOpacity onPress={() => Linking.openURL(`tel:${selectedArtisan?.phone || '08111783575'}`)}>
                                 <Text style={[styles.contactPhone, { color: colors.primary }]}>{selectedArtisan?.phone || '08111783575'}</Text>
                             </TouchableOpacity>

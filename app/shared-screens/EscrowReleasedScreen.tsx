@@ -199,8 +199,11 @@ const EscrowReleasedScreen = () => {
                     </View>
                     <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-                    {/* Receipt Link */}
-                    <TouchableOpacity 
+                    {/* Receipt Link — hidden until the receipt service is back online
+                        (eden-receipts.vercel.app currently returns 404; a dead button
+                        is a broken feature for store review). Restore this block once
+                        the receipt site is redeployed.
+                    <TouchableOpacity
                         style={styles.receiptLink}
                         onPress={handleDownloadReceipt}
                     >
@@ -208,7 +211,7 @@ const EscrowReleasedScreen = () => {
                         <Text style={[styles.receiptLinkText, { color: colors.primary }]}>
                             Download Receipt
                         </Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                 </View>
 
                 {/* What Happens Next Card */}
@@ -218,13 +221,13 @@ const EscrowReleasedScreen = () => {
                         <Text style={[styles.nextTitle, { color: colors.primary }]}>What happens next?</Text>
                     </View>
                     <Text style={[styles.nextText, { color: colors.textSecondary }]}>
-                        • The landlord has been notified of the escrow release via push notification and SMS.
+                        • The landlord has been notified of the escrow release via push notification.
                     </Text>
                     <Text style={[styles.nextText, { color: colors.textSecondary, marginTop: 6 }]}>
-                        • Bank transfer is initiated. Payouts reflect in landlord account within 1 business day.
+                        • Bank transfer is initiated. Payouts typically reflect in the landlord account within a few business days.
                     </Text>
                     <Text style={[styles.nextText, { color: colors.textSecondary, marginTop: 6 }]}>
-                        • Your move-in confirmation is archived in your Eden Documents wallet.
+                        • This release is recorded in your Eden escrow history for your records.
                     </Text>
                 </View>
 

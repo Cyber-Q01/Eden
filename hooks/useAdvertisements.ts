@@ -17,56 +17,21 @@ export interface MobileAdvertisement {
     color?: string;
 }
 
+// Shown only while the advertisements table has no active rows.
+// Keep this truthful and non-promotional: no offers, guarantees, prices,
+// or links that do not actually work (store reviewers see this content).
 export const FALLBACK_AD_BANNERS: MobileAdvertisement[] = [
     {
         id: 'fb-1',
-        title: 'Find your dream home with 0% hassle',
-        subtitle: 'Browse thousands of verified properties in Lagos & Abuja',
+        title: 'How Eden Escrow Protects Your Rent',
+        subtitle: 'You pay into a secure escrow. Funds are released to the landlord only when you confirm the property.',
         placement: 'homepage_banner',
         adType: 'image',
         targetType: 'website',
-        mediaUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&auto=format&fit=crop&q=80',
-        targetUrl: 'https://eden.ng',
-        ctaText: 'Explore Now',
+        mediaUrl: 'https://images.unsplash.com/photo-1560580159-44d2fd901ef3?w=800&auto=format&fit=cover&q=80',
+        targetUrl: '',
+        ctaText: 'How it works',
         color: '#1D4ED8',
-    },
-    {
-        id: 'fb-2',
-        title: 'Download the Eden Partner App',
-        subtitle: 'For verified real estate agents and delegated property managers',
-        placement: 'homepage_banner',
-        adType: 'image',
-        targetType: 'mobile_app',
-        mediaUrl: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&auto=format&fit=crop&q=80',
-        targetUrl: 'https://eden.ng/app',
-        playstoreUrl: 'https://play.google.com/store/apps/details?id=com.eden.mobile',
-        appstoreUrl: 'https://apps.apple.com/app/eden-properties/id12345678',
-        ctaText: 'Get App',
-        color: '#059669',
-    },
-    {
-        id: 'fb-3',
-        title: 'Zero Escrow Fee Weekend Special',
-        subtitle: '100% money-back guarantee on all rent deposits held securely',
-        placement: 'homepage_banner',
-        adType: 'image',
-        targetType: 'website',
-        mediaUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80',
-        targetUrl: 'https://eden.ng/escrow',
-        ctaText: 'Learn More',
-        color: '#7C3AED',
-    },
-    {
-        id: 'fb-4',
-        title: 'Book Verified Technical Artisans',
-        subtitle: 'Emergency plumbers, electricians & AC repair with on-site pricing',
-        placement: 'homepage_banner',
-        adType: 'image',
-        targetType: 'website',
-        mediaUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80',
-        targetUrl: 'https://eden.ng/artisans',
-        ctaText: 'Find Artisan',
-        color: '#D97706',
     },
 ];
 
@@ -77,13 +42,13 @@ function decodeTargetInfo(rawUrl?: string | null): {
     playstoreUrl?: string;
     appstoreUrl?: string;
 } {
-    if (!rawUrl) return { targetType: 'website', targetUrl: 'https://eden.ng' };
+    if (!rawUrl) return { targetType: 'website', targetUrl: '' };
     if (rawUrl.startsWith('{') && rawUrl.includes('mobile_app')) {
         try {
             const parsed = JSON.parse(rawUrl);
             return {
                 targetType: 'mobile_app',
-                targetUrl: parsed.target_url || 'https://eden.ng',
+                targetUrl: parsed.target_url || '',
                 playstoreUrl: parsed.playstore_url || '',
                 appstoreUrl: parsed.appstore_url || '',
             };
@@ -170,9 +135,9 @@ export function useAdvertisements() {
                     await Linking.openURL(fallbackUrl);
                 }
             } else {
-                // Website Category: Route directly to Web URL
-                const webUrl = ad.targetUrl || 'https://eden.ng';
-                await Linking.openURL(webUrl);
+                // Website Category: Route directly to Web URL (no-op when unset)
+                if (!ad.targetUrl) return;
+                await Linking.openURL(ad.targetUrl);
             }
         } catch (err) {
             console.warn('[handleBannerPress] Open URL error:', err);

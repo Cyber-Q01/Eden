@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert, FlatList, Image,
   RefreshControl,
   StyleSheet, Text, TouchableOpacity, View
@@ -28,9 +29,10 @@ const ApplicationsScreen = () => {
   const renterHook = useMyApplications();
 
   const isRenter = role === 'TENANT';
-  const { applications, loading, refetch } = isRenter ? renterHook : ownerHook;
+  const { applications, loading, refetch, deleteApplication } = isRenter ? renterHook : ownerHook;
   const { respondToApplication, responding } = ownerHook;
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Refetch when screen is focused
   useFocusEffect(
@@ -67,10 +69,32 @@ const ApplicationsScreen = () => {
     );
   };
 
+  const confirmDelete = (application: Application) => {
+    if (deletingId) return;
+    const propertyName = application.property?.title || 'this property';
+    Alert.alert(
+      'Delete Application',
+      `Permanently delete this declined application for ${propertyName}? It will be removed for both the tenant and the landlord.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingId(application.id);
+            await deleteApplication(application.id);
+            setDeletingId(null);
+          },
+        },
+      ]
+    );
+  };
+
   const renderApplication = ({ item }: { item: Application }) => {
     const statusCfg = STATUS_CONFIG[item.status];
     const isResponding = respondingId === item.id;
     const propertyImage = item.property?.images?.[0];
+    const canDelete = item.status === 'declined';
 
     return (
       <TouchableOpacity
@@ -110,7 +134,24 @@ const ApplicationsScreen = () => {
             <View style={[styles.statusBadge, { backgroundColor: colors.card, borderColor: statusCfg.color }]}>
               <Text style={[styles.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={isDark ? '#475569' : '#CBD5E1'} />
+            <View style={styles.cardRightBottom}>
+              {/* Delete — only for declined applications (both roles) */}
+              {canDelete && (
+                <TouchableOpacity
+                  onPress={() => confirmDelete(item)}
+                  style={[styles.deleteBtn, { backgroundColor: '#EF444418' }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  disabled={!!deletingId}
+                >
+                  {deletingId === item.id ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                  )}
+                </TouchableOpacity>
+              )}
+              <Ionicons name="chevron-forward" size={20} color={isDark ? '#475569' : '#CBD5E1'} />
+            </View>
           </View>
         </View>
 
@@ -216,6 +257,11 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   cardRight: { alignItems: 'flex-end', gap: 12 },
+  cardRightBottom: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  deleteBtn: {
+    width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center',
+  },
   propertyImage: { width: 56, height: 56, borderRadius: 12 },
   propertyImagePlaceholder: {
     width: 56, height: 56, borderRadius: 12,

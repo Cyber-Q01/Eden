@@ -127,7 +127,7 @@ export const useRequests = () => {
     const [loading, setLoading] = useState(false);
     const queryClient = useQueryClient();
 
-    const submitMaintenanceRequest = async (data: {
+    const submitMaintenanceRequest = useCallback(async (data: {
         propertyId?: string;
         propertyTitle?: string;
         category: string;
@@ -204,9 +204,9 @@ export const useRequests = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [user, showError, showSuccess, queryClient]);
 
-    const submitComplaintRequest = async (category: string, description: string, photoUris: string[]) => {
+    const submitComplaintRequest = useCallback(async (category: string, description: string, photoUris: string[]) => {
         if (!user) return { error: 'Not authenticated' };
         setLoading(true);
         try {
@@ -236,9 +236,9 @@ export const useRequests = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [user, showError, showSuccess, queryClient]);
 
-    const fetchMaintenanceRequests = async (): Promise<MaintenanceItem[]> => {
+    const fetchMaintenanceRequests = useCallback(async (): Promise<MaintenanceItem[]> => {
         if (!user) return [];
         setLoading(true);
         try {
@@ -251,6 +251,7 @@ export const useRequests = () => {
                     .select('id, title')
                     .eq('landlord_id', user.id);
 
+                const propIds = (landlordProps || []).map((p) => p.id).filter(Boolean);
                 const propTitles = (landlordProps || []).map((p) => p.title).filter(Boolean);
 
                 const { data, error } = await supabase
@@ -259,11 +260,12 @@ export const useRequests = () => {
                     .order('created_at', { ascending: false });
 
                 if (!error && data) {
-                    // Filter for requests belonging to landlord or landlord's properties
+                    // Filter for requests belonging to the landlord or their properties only
                     dbItems = data.filter((item) => {
                         if (item.tenant_id === user.id) return true;
+                        if (item.property_id && propIds.includes(item.property_id)) return true;
                         if (propTitles.some((t) => item.description?.includes(`[${t}]`))) return true;
-                        return true; // Display all relevant maintenance for landlord
+                        return false;
                     });
                 }
             } else {
@@ -309,9 +311,9 @@ export const useRequests = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [user, role]);
 
-    const fetchComplaintRequests = async () => {
+    const fetchComplaintRequests = useCallback(async () => {
         if (!user) return [];
         setLoading(true);
         try {
@@ -329,7 +331,7 @@ export const useRequests = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [user]);
 
     return {
         loading,

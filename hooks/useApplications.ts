@@ -59,6 +59,52 @@ export type Application = {
 
 const EMPTY_ARRAY: any[] = [];
 
+// Hard-delete a DECLINED application. Both the tenant side and the landlord side
+// can delete — each side is only allowed to delete rows it is a party to.
+const deleteApplicationById = async (
+  applicationId: string,
+  opts: {
+    userId: string;
+    isOwnerSide: boolean;
+    queryClient: ReturnType<typeof useQueryClient>;
+    showSuccess: (message: string) => void;
+    showError: (error: { type?: any; title: string; message: string }) => void;
+  }
+): Promise<{ error: string | null }> => {
+  try {
+    const { data: row } = await supabase
+      .from('property_applications')
+      .select('status, renter_id, owner_id')
+      .eq('id', applicationId)
+      .maybeSingle();
+
+    if (!row) return { error: 'Application not found' };
+    if (row.status !== 'declined') return { error: 'Only declined applications can be deleted' };
+    const allowed = opts.isOwnerSide
+      ? row.owner_id === opts.userId
+      : row.renter_id === opts.userId;
+    if (!allowed) return { error: 'You can only delete applications you are involved in' };
+
+    const { error: deleteError } = await supabase
+      .from('property_applications')
+      .delete()
+      .eq('id', applicationId);
+    if (deleteError) throw deleteError;
+
+    opts.showSuccess('Application deleted');
+    opts.queryClient.invalidateQueries({ queryKey: ['my-applications'] });
+    opts.queryClient.invalidateQueries({ queryKey: ['landlord-applications'] });
+    opts.queryClient.invalidateQueries({ queryKey: ['application', applicationId] });
+    opts.queryClient.invalidateQueries({ queryKey: ['badge-pending-applications'] });
+    return { error: null };
+  } catch (e: any) {
+    console.warn('[deleteApplication] notice:', e);
+    const err = await handleError(e);
+    opts.showError(err);
+    return { error: err.message };
+  }
+};
+
 export const useApplicationDetails = (applicationId: string | null | undefined, initialData?: Application | null) => {
   const { user } = useAuth();
   const { showError } = useToast();
@@ -116,7 +162,7 @@ export const useApplicationDetails = (applicationId: string | null | undefined, 
 
 export const useMyApplications = () => {
   const { user, role } = useAuth();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   const queryClient = useQueryClient();
 
   const { data: applications, isLoading: loading, isError: error, refetch } = useQuery({
@@ -156,6 +202,17 @@ export const useMyApplications = () => {
   const fetchApplications = async () => {
     const res = await refetch();
     return res.data ?? [];
+  };
+
+  const deleteApplication = async (applicationId: string): Promise<{ error: string | null }> => {
+    if (!user) return { error: 'Not authenticated' };
+    return deleteApplicationById(applicationId, {
+      userId: user.id,
+      isOwnerSide: false,
+      queryClient,
+      showSuccess,
+      showError,
+    });
   };
 
   const submitApplication = async (
@@ -226,6 +283,7 @@ export const useMyApplications = () => {
     loading,
     error,
     submitApplication,
+    deleteApplication,
     refetch: fetchApplications,
   };
 };
@@ -288,6 +346,17 @@ export const useLandlordApplications = () => {
   const fetchApplications = async () => {
     const res = await refetch();
     return res.data ?? [];
+  };
+
+  const deleteApplication = async (applicationId: string): Promise<{ error: string | null }> => {
+    if (!user) return { error: 'Not authenticated' };
+    return deleteApplicationById(applicationId, {
+      userId: user.id,
+      isOwnerSide: true,
+      queryClient,
+      showSuccess,
+      showError,
+    });
   };
 
   const respondToApplication = async (
@@ -431,6 +500,7 @@ export const useLandlordApplications = () => {
     responding,
     error,
     respondToApplication,
+    deleteApplication,
     refetch: fetchApplications,
   };
 };

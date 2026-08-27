@@ -16,16 +16,12 @@ import { useAdvertisements, MobileAdvertisement } from '../../hooks/useAdvertise
 
 const { width } = Dimensions.get('window');
 
-const HERO_BANNERS = [
-    { id: '1', color: '#407BFF', title: 'Find your dream home', subtitle: 'Browse thousands of verified properties' },
-    { id: '2', color: '#0047AB', title: 'Verified properties only', subtitle: 'Inspected & 100% scam free' },
-    { id: '3', color: '#00C853', title: 'Schedule tours easily', subtitle: 'Book physical & virtual tours' },
-    { id: '4', color: '#1E3C72', title: 'Secure escrow payments', subtitle: 'Funds protected until you confirm' },
-    { id: '5', color: '#7C3AED', title: 'Zero hidden fees', subtitle: 'Transparent pricing & direct contact' },
-    { id: '6', color: '#DB2777', title: 'Fast application approval', subtitle: 'Apply online in under 2 minutes' },
-    { id: '7', color: '#D97706', title: 'Find verified artisans', subtitle: 'Plumbers, electricians & repair services' },
-    { id: '8', color: '#059669', title: 'Escrow-protected payments', subtitle: 'Funds released when you confirm' },
-];
+// NOTE: a static HERO_BANNERS array used to live here but was never rendered
+// (the home screen only shows the live advertisements carousel above). It was
+// removed for store listing prep because it contained unverifiable claims
+// ("thousands of properties", "100% scam free"). The fallback shown when the
+// database has no active ads is the single honest escrow banner in
+// hooks/useAdvertisements.ts — keep any static promo copy truthful there.
 
 const HomeScreen = () => {
     const { colors } = useTheme();

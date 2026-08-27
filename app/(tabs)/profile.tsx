@@ -117,6 +117,8 @@ const ProfileScreen = () => {
     const { applications, refetch: fetchApplications, loading: appsLoading } = useMyApplications();
     const { tickets } = useSupportTickets();
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deletingAccount, setDeletingAccount] = useState(false);
 
     useFocusEffect(
         React.useCallback(() => {
@@ -189,6 +191,25 @@ const ProfileScreen = () => {
     const handleSignOut = async () => {
         setShowSignOutModal(false);
         await signOut();
+    };
+
+    const handleDeleteAccount = async () => {
+        if (!user || deletingAccount) return;
+        setDeletingAccount(true);
+        try {
+            await callEdgeFunction('delete-account', 'POST');
+            setShowDeleteModal(false);
+            showSuccess('Your account and personal data have been deleted.');
+            await signOut();
+        } catch (error: any) {
+            showError({
+                type: 'unknown',
+                title: 'Deletion Failed',
+                message: error.message || 'Something went wrong. Please try again or contact support.'
+            });
+        } finally {
+            setDeletingAccount(false);
+        }
     };
 
     return (
@@ -346,6 +367,12 @@ const ProfileScreen = () => {
                             onPress={handleTestPush}
                             loading={loadingPush}
                         />
+                        <MenuRow
+                            icon="trash-outline"
+                            label="Delete My Account"
+                            danger
+                            onPress={() => setShowDeleteModal(true)}
+                        />
                     </Section>
 
                     <Section title="APPEARANCE">
@@ -370,7 +397,7 @@ const ProfileScreen = () => {
                         <MenuRow
                             icon="document-text-outline"
                             label="Terms & Privacy"
-                            onPress={() => Linking.openURL('https://Eden.ng/terms')}
+                            onPress={() => Linking.openURL('https://web-portal-eta-smoky.vercel.app/terms')}
                         />
                     </Section>
 
@@ -406,6 +433,40 @@ const ProfileScreen = () => {
                         <TouchableOpacity
                             style={styles.modalCancelBtn}
                             onPress={() => setShowSignOutModal(false)}
+                        >
+                            <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Delete Account Modal */}
+            <Modal visible={showDeleteModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
+                        <View style={[styles.modalIconCircle, { backgroundColor: isDark ? '#450a0a' : '#FEF2F2' }]}>
+                            <Ionicons name="trash-outline" size={32} color="#EF4444" />
+                        </View>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Account?</Text>
+                        <Text style={[styles.modalSubtitle, { color: colors.textSecondary, textAlign: 'left', marginBottom: 10 }]}>
+                            This permanently deletes your profile, ID/KYC data (NIN, ID photos), applications, favorites, chats and support tickets. If you own listings, your properties and bank details are deleted too.
+                        </Text>
+                        <Text style={[styles.modalSubtitle, { color: colors.textSecondary, fontSize: 13, marginBottom: 28 }]}>
+                            Payment and rental transaction records are kept (anonymized) as required for legal and tax compliance. This cannot be undone.
+                        </Text>
+                        <TouchableOpacity
+                            style={[styles.modalSignOutBtn, { backgroundColor: '#EF4444' }, deletingAccount && { opacity: 0.7 }]}
+                            onPress={handleDeleteAccount}
+                            disabled={deletingAccount}
+                        >
+                            {deletingAccount
+                                ? <ActivityIndicator color="#FFF" />
+                                : <Text style={styles.modalSignOutText}>Yes, Delete Permanently</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.modalCancelBtn}
+                            onPress={() => setShowDeleteModal(false)}
+                            disabled={deletingAccount}
                         >
                             <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
                         </TouchableOpacity>

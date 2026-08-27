@@ -292,6 +292,10 @@ const AIAssistantModal = ({ visible, onClose }: Props) => {
                         </View>
                     )}
 
+                    {/* AI disclosure (store policy: generative-AI output must be labeled) */}
+                    <Text style={{ color: colors.textSecondary, fontSize: 10, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 6 }}>
+                        AI-generated responses — please verify important details
+                    </Text>
                     {/* Input — sits above the keyboard thanks to the KAV above */}
                     <View style={[styles.inputRow, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom, 12) : 10 }]}>
                         <TextInput

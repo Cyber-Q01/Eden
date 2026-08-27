@@ -1,208 +1,112 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Application from 'expo-application';
-import * as Linking from 'expo-linking';
-import React, { useEffect, useState } from 'react';
-import {
-    Animated,
-    Platform,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { useTheme } from '../context/ThemeContext';
-import { supabase } from '../lib/supabase';
+import React from 'react';
+import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppSettings } from '../hooks/useAppSettings';
 
-const PLAY_STORE_PACKAGE = 'com.eden.mobile';
-const PLAY_STORE_URL = `market://details?id=${PLAY_STORE_PACKAGE}`;
-const PLAY_STORE_WEB_URL = `https://play.google.com/store/apps/details?id=${PLAY_STORE_PACKAGE}`;
-const DISMISSED_VERSION_KEY = 'eden_dismissed_update_version';
-
-/**
- * Compare semantic versions ("1.0.1" > "1.0.0")
- */
-const isNewerVersion = (latest: string, current: string): boolean => {
-    try {
-        const lParts = latest.trim().split('.').map((n) => parseInt(n, 10) || 0);
-        const cParts = current.trim().split('.').map((n) => parseInt(n, 10) || 0);
-
-        for (let i = 0; i < Math.max(lParts.length, cParts.length); i++) {
-            const l = lParts[i] ?? 0;
-            const c = cParts[i] ?? 0;
-            if (l > c) return true;
-            if (l < c) return false;
-        }
-    } catch (e) {
-        console.warn('[UpdateBanner] Version compare error:', e);
-    }
-    return false;
+type Props = {
+    settings: AppSettings;
+    onDismiss: () => void;
 };
 
-export const UpdateBanner = () => {
-    const { isDark } = useTheme();
-    const [showBanner, setShowBanner] = useState(false);
-    const [latestVersion, setLatestVersion] = useState<string>('');
-    const [slideAnim] = useState(new Animated.Value(-100)); // Animated banner slide-down
+// Slim top banner: shown while the installed build is older than
+// app_settings.latest_version. Dismissing hides it for this app session only.
+const UpdateBanner = ({ settings, onDismiss }: Props) => {
+    const insets = useSafeAreaInsets();
 
-    useEffect(() => {
-        const checkForUpdate = async () => {
-            try {
-                const currentVersion = Application.nativeApplicationVersion || '1.0.0';
+    const storeUrl =
+        Platform.OS === 'ios'
+            ? settings.storeUrlIos || settings.storeUrlAndroid
+            : settings.storeUrlAndroid || settings.storeUrlIos;
 
-                // Fetch latest version from Supabase 'app_config' table
-                let remoteLatestVersion: string | null = null;
-                try {
-                    const { data, error } = await supabase
-                        .from('app_config')
-                        .select('latest_version')
-                        .limit(1)
-                        .maybeSingle();
-
-                    if (!error && data?.latest_version) {
-                        remoteLatestVersion = data.latest_version;
-                    }
-                } catch (dbErr) {
-                    console.warn('[UpdateBanner] app_config query notice:', dbErr);
-                }
-
-                if (!remoteLatestVersion) return;
-
-                setLatestVersion(remoteLatestVersion);
-
-                // Check if user already dismissed this specific update version
-                const dismissedVersion = await AsyncStorage.getItem(DISMISSED_VERSION_KEY);
-                if (dismissedVersion === remoteLatestVersion) return;
-
-                // Compare installed version with latest version
-                if (isNewerVersion(remoteLatestVersion, currentVersion)) {
-                    setShowBanner(true);
-                    Animated.timing(slideAnim, {
-                        toValue: 0,
-                        duration: 400,
-                        useNativeDriver: true,
-                    }).start();
-                }
-            } catch (err) {
-                console.warn('[UpdateBanner] Update check failed:', err);
-            }
-        };
-
-        checkForUpdate();
-    }, []);
-
-    const handleDismiss = async () => {
-        Animated.timing(slideAnim, {
-            toValue: -100,
-            duration: 300,
-            useNativeDriver: true,
-        }).start(async () => {
-            setShowBanner(false);
-            if (latestVersion) {
-                await AsyncStorage.setItem(DISMISSED_VERSION_KEY, latestVersion);
-            }
-        });
-    };
-
-    const handleUpdate = async () => {
+    const openStore = async () => {
+        if (!storeUrl) return;
         try {
-            const canOpen = await Linking.canOpenURL(PLAY_STORE_URL);
-            if (canOpen) {
-                await Linking.openURL(PLAY_STORE_URL);
-            } else {
-                await Linking.openURL(PLAY_STORE_WEB_URL);
-            }
-        } catch {
-            await Linking.openURL(PLAY_STORE_WEB_URL);
+            await Linking.openURL(storeUrl);
+        } catch (e) {
+            console.warn('[UpdateBanner] open store notice:', e);
         }
     };
 
-    if (!showBanner) return null;
-
     return (
-        <Animated.View
-            style={[
-                styles.banner,
-                {
-                    transform: [{ translateY: slideAnim }],
-                    backgroundColor: isDark ? '#1E3A8A' : '#1D4ED8',
-                },
-            ]}
+        <View
+            pointerEvents="box-none"
+            style={[styles.wrapper, { top: insets.top, zIndex: 9999 }]}
         >
-            <View style={styles.iconCircle}>
-                <Ionicons name="cloud-download-outline" size={18} color="#FFF" />
+            <View style={[styles.banner, { backgroundColor: '#F59E0B' }]}>
+                <Ionicons name="cloud-download-outline" size={18} color="#451A03" />
+                <Text style={styles.text} numberOfLines={2}>
+                    {settings.releaseNotes
+                        ? `Update available: ${settings.releaseNotes}`
+                        : 'A new version of Eden is available'}
+                </Text>
+                <View style={{ flexShrink: 0 }}>
+                    {storeUrl && (
+                        <TouchableOpacity
+                            style={[styles.updateBtn, { backgroundColor: '#451A03' }]}
+                            onPress={openStore}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.updateBtnText}>Update</Text>
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                        onPress={onDismiss}
+                        style={styles.dismissBtn}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Ionicons name="close" size={18} color="#451A03" />
+                    </TouchableOpacity>
+                </View>
             </View>
-            <View style={styles.content}>
-                <Text style={styles.title}>Update Available (v{latestVersion})</Text>
-                <Text style={styles.subtitle}>A new version is live on Google Play Store.</Text>
-            </View>
-            <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate} activeOpacity={0.8}>
-                <Text style={styles.updateBtnText}>Update</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={handleDismiss}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-                <Ionicons name="close-circle" size={20} color="#93C5FD" />
-            </TouchableOpacity>
-        </Animated.View>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    banner: {
+    wrapper: {
         position: 'absolute',
-        top: Platform.OS === 'ios' ? 48 : 32,
-        left: 12,
-        right: 12,
-        zIndex: 9999,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        paddingHorizontal: 12,
+    },
+    banner: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
+        gap: 8,
+        maxWidth: 576,
+        width: '100%',
+        borderRadius: 14,
         paddingVertical: 10,
-        borderRadius: 16,
-        gap: 10,
-        shadowColor: '#000',
+        paddingLeft: 12,
+        paddingRight: 8,
+        shadowColor: '#451A03',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.25,
-        shadowRadius: 8,
-        elevation: 10,
+        shadowRadius: 10,
+        elevation: 8,
     },
-    iconCircle: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    content: {
+    text: {
         flex: 1,
-    },
-    title: {
-        color: '#FFFFFF',
-        fontSize: 13,
+        fontSize: 12.5,
         fontWeight: '700',
-    },
-    subtitle: {
-        color: '#BFDBFE',
-        fontSize: 11,
-        marginTop: 1,
+        color: '#451A03',
+        lineHeight: 16,
     },
     updateBtn: {
-        backgroundColor: '#F97316',
-        paddingHorizontal: 12,
+        paddingHorizontal: 14,
         paddingVertical: 7,
         borderRadius: 10,
     },
     updateBtnText: {
-        color: '#FFFFFF',
+        color: '#FFF',
         fontSize: 12,
-        fontWeight: '700',
+        fontWeight: '800',
     },
-    closeBtn: {
-        padding: 2,
+    dismissBtn: {
+        padding: 6,
+        marginLeft: 2,
     },
 });
 

@@ -14,8 +14,27 @@
 -- ============================================================================
 
 create extension if not exists pg_net;
-create extension if not exists jwt;
 create extension if not exists pg_cron;
+
+-- 0) Shared-secret store so Postgres can authenticate to the edge function
+--    (no pgjwt extension needed — your Supabase doesn't have it).
+--    After running this file, grab the generated secret once:
+--      select value from public.ef_secrets where key = 'ad_push_secret';
+--    ...and set it as env var AD_PUSH_SECRET on the send-ad-notification
+--    edge function (dashboard: Edge Functions -> send-ad-notification ->
+--    Manage secrets). The function is deployed with --no-verify-jwt.
+create table if not exists public.ef_secrets (
+  key        text primary key,
+  value      text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.ef_secrets enable row level security;
+-- No policies: service role / postgres only.
+
+insert into public.ef_secrets (key, value)
+values ('ad_push_secret', lower(md5(random()::text || now()::text || 'eden-ad-push')))
+on conflict (key) do nothing;
 
 -- 1) Exactly-once bookkeeping -------------------------------------------------
 create table if not exists public.ad_push_log (
@@ -65,19 +84,13 @@ as $$
 declare
   r record;
   fired integer := 0;
-  service_jwt text;
+  push_secret text;
 begin
-  -- Mint a 1-hour service-role JWT to call the edge function
-  -- (no plaintext secret stored anywhere in the database)
-  service_jwt := jwt.sign(
-    jsonb_build_object(
-      'role', 'service_role',
-      'iss', 'supabase',
-      'iat', floor(extract(epoch from now()))::int,
-      'exp', (floor(extract(epoch from now())) + 3600)::int
-    ),
-    current_setting('app.settings.jwt_secret')
-  );
+  -- Shared secret for authenticating to the edge function (see ef_secrets above).
+  select value into push_secret from public.ef_secrets where key = 'ad_push_secret';
+  if push_secret is null then
+    raise exception 'ad_push_secret missing from ef_secrets — re-run the migration';
+  end if;
 
   -- Resurrect rows stuck in 'sending' (edge function crashed before reporting)
   update public.ad_push_log
@@ -110,7 +123,7 @@ begin
     perform net.http_post(
       url := 'https://ytpggbkndnynyzashexk.supabase.co/functions/v1/send-ad-notification',
       headers := jsonb_build_object(
-        'Authorization', 'Bearer ' || service_jwt,
+        'x-ad-push-secret', push_secret,
         'Content-Type', 'application/json'
       ),
       body := jsonb_build_object('ad_id', r.ad_id)

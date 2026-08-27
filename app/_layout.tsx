@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Notifications from 'expo-notifications';
 import { Stack, useRootNavigationState, useRouter, useSegments } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BackHandler } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ToastProvider } from "../components/Toast";
@@ -10,6 +10,10 @@ import { NetworkProvider } from "../context/NetworkContext";
 import { ThemeProvider } from "../context/ThemeContext";
 import { UserProvider } from "../context/UserContext";
 import { useNotifications } from "../hooks/useNotifications";
+import { useAppSettings, compareVersions } from "../hooks/useAppSettings";
+import Constants from "expo-constants";
+import MaintenanceModeView from "../components/MaintenanceModeView";
+import UpdateBanner from "../components/UpdateBanner";
 
 // Handle notifications when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -40,6 +44,12 @@ function InitialLayout() {
 
   // Initialize notifications
   useNotifications();
+
+  // ── Global app settings: maintenance-mode takeover + store update banner ──
+  const { settings } = useAppSettings();
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  const currentVersion = Constants.expoConfig?.version || "0.0.0";
+  const updateAvailable = settings.checked && compareVersions(settings.latestVersion, currentVersion) > 0;
 
   const segments = useSegments();
   const router = useRouter();
@@ -103,20 +113,33 @@ function InitialLayout() {
     };
   }, [session, segments, router]);
 
-  return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: 'fade'
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="landlord" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="welcome" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="shared-screens/ApplicationScreen" options={{ gestureEnabled: false, headerShown: false }} />
+  // Maintenance mode: full-app takeover, no dismiss — clears itself the moment
+  // the DB flag flips back to 'off' (settings keep polling in the background)
+  if (settings.checked && settings.maintenance) {
+    return <MaintenanceModeView />;
+  }
 
-    </Stack>
+  return (
+    <>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade'
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="landlord" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="welcome" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="shared-screens/ApplicationScreen" options={{ gestureEnabled: false, headerShown: false }} />
+
+      </Stack>
+
+      {/* Store update banner — newest build in DB is ahead of this build */}
+      {updateAvailable && !updateDismissed && (
+        <UpdateBanner settings={settings} onDismiss={() => setUpdateDismissed(true)} />
+      )}
+    </>
   );
 }
 

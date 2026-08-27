@@ -9,16 +9,22 @@
 //   * Exactly-once: claims the ad row atomically via `claim_ad_push`;
 //     stale/failed rows are retried by the cron (max 5 attempts).
 //
+// Deploy:  supabase functions deploy send-ad-notification --no-verify-jwt
+//
 // Required env (project or function level):
-//   * EXPO_PUSH_ACCESS_TOKEN — the Expo push access token (the same token
-//     your send-push-notification function uses; if it lives under a
-//     different env name there, copy that value here).
+//   * AD_PUSH_SECRET — copy from: select value from public.ef_secrets
+//     where key = 'ad_push_secret';  (this function is closed to everyone
+//     else — only the Postgres cron function can call it)
+//   * EXPO_PUSH_ACCESS_TOKEN — your Expo push access token, i.e. the SAME
+//     token your existing send-push-notification function already uses.
+//     Find it under: Dashboard -> Edge Functions -> send-push-notification
+//     -> Environment Variables. (Common env names are all accepted below.)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ad-push-secret',
 };
 
 const EXPO_PUSH_ENDPOINT = 'https://expo.push.com/v1';
@@ -39,14 +45,21 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
+  // Shared-secret gate — only the Postgres cron function (or you, from the
+  // dashboard with the same secret) may trigger this worker.
+  const expectedSecret = Deno.env.get('AD_PUSH_SECRET') ?? '';
+  const providedSecret = req.headers.get('x-ad-push-secret') ?? '';
+  if (!expectedSecret || providedSecret !== expectedSecret) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const { ad_id } = await req.json().catch(() => ({}));
     if (!ad_id) {
       return jsonResponse({ error: 'ad_id is required' }, 400);
     }
 
-    // Service client — this worker is only ever invoked with a service-role
-    // JWT minted by the Postgres cron function (or manually for testing).
+    // Service client — only used for DB access inside this trusted worker.
     const admin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -102,10 +115,19 @@ Deno.serve(async (req) => {
     }
 
     // 4) Batched fan-out to the Expo Push API (the only network work — off the DB)
-    const accessToken = Deno.env.get('EXPO_PUSH_ACCESS_TOKEN') ?? '';
+    // Accept the common env names so it works with the token you already have.
+    const accessToken =
+      Deno.env.get('EXPO_PUSH_ACCESS_TOKEN') ??
+      Deno.env.get('EXPO_PUSH_TOKEN') ??
+      Deno.env.get('EXPO_ACCESS_TOKEN') ??
+      Deno.env.get('EXPO_NOTIFICATION_TOKEN') ??
+      '';
     if (!accessToken) {
       // Leave row as 'sending' so the cron retries once the token is configured
-      throw new Error('EXPO_PUSH_ACCESS_TOKEN is not set on this function');
+      throw new Error(
+        'Expo push token not set. Set EXPO_PUSH_ACCESS_TOKEN on this function ' +
+          '(copy the Expo token your send-push-notification function already uses).'
+      );
     }
 
     let delivered = 0;

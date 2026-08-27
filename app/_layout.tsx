@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Notifications from 'expo-notifications';
 import { Stack, useRootNavigationState, useRouter, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
-import { BackHandler } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ToastProvider } from "../components/Toast";
 import { AuthProvider, useAuth } from "../context/AuthContext";
@@ -88,30 +87,12 @@ function InitialLayout() {
     }
   }, [session, loading, role, completedBiodata, segments, rootNavigationState?.key]);
 
-  useEffect(() => {
-    const handleBackPress = () => {
-      if (session) {
-        // Navigate within the app first — only exit when there is nothing left to go back to
-        if (router.canGoBack()) {
-          router.back();
-          return true;
-        }
-
-        // True home screens: pressing back exits the app (standard Android behavior)
-        const currentSegment = segments[0];
-        if (currentSegment === '(tabs)' || currentSegment === 'landlord' || currentSegment === 'profilesetup') {
-          BackHandler.exitApp();
-          return true;
-        }
-      }
-      return false;
-    };
-
-    const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-    return () => {
-      subscription.remove();
-    };
-  }, [session, segments, router]);
+  // NOTE: Android hardware back is intentionally NOT handled here.
+  // Expo Router's native stack handles it correctly out of the box:
+  //   • on a pushed screen   → back pops to the previous screen
+  //   • on a root/tab screen → back exits the app (standard Android)
+  // A manual BackHandler here fought the native stack (router.canGoBack()
+  // is unreliable with the native stack) and was force-exiting the app.
 
   // Maintenance mode: full-app takeover, no dismiss — clears itself the moment
   // the DB flag flips back to 'off' (settings keep polling in the background)

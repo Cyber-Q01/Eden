@@ -47,10 +47,33 @@ Deno.serve(async (req) => {
 
   // Shared-secret gate — only the Postgres cron function (or you, from the
   // dashboard with the same secret) may trigger this worker.
+  // NOTE: this is NOT the Expo token and NOT any user's device token. It is a
+  // random value we generate in the `ef_secrets` table so Postgres (pg_net) can
+  // prove to this function that it's the cron calling it. It must be set as the
+  // AD_PUSH_SECRET env var on this function to match.
   const expectedSecret = Deno.env.get('AD_PUSH_SECRET') ?? '';
   const providedSecret = req.headers.get('x-ad-push-secret') ?? '';
-  if (!expectedSecret || providedSecret !== expectedSecret) {
-    return jsonResponse({ error: 'Unauthorized' }, 401);
+  if (!expectedSecret) {
+    return jsonResponse(
+      {
+        error:
+          'AD_PUSH_SECRET is not configured on this function. Set it to the value from: ' +
+          "select value from public.ef_secrets where key = 'ad_push_secret'; " +
+          '(Dashboard -> Edge Functions -> send-ad-notification -> Manage secrets). ' +
+          'This is the cron shared secret, separate from the Expo token.',
+      },
+      401,
+    );
+  }
+  if (providedSecret !== expectedSecret) {
+    return jsonResponse(
+      {
+        error:
+          'Shared-secret mismatch: the x-ad-push-secret header does not match AD_PUSH_SECRET on this function. ' +
+          'If you are testing from the dashboard, send header x-ad-push-secret with the value from ef_secrets.',
+      },
+      401,
+    );
   }
 
   try {

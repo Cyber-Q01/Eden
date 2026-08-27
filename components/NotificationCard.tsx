@@ -34,17 +34,18 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
   const isUnread = !notification.read;
   // In dark mode, soften the icon background so it doesn't clash
   const iconBg = isDark ? config.color + '28' : config.bgColor;
+  // Strong, unmistakable highlight for unread: solid blue background + left accent bar
+  const unreadBg = isDark ? '#1E3A8A' : '#DBEAFE';
+  const unreadMessageColor = isDark ? '#E2E8F0' : '#475569';
 
   return (
     <TouchableOpacity
       style={[
         styles.container,
         {
-          // Clear read/unread UI distinction: unread cards get a primary tint,
-          // read cards stay plain and are de-emphasised
-          backgroundColor: isUnread
-            ? (isDark ? colors.primary + '26' : colors.primary + '10')
-            : colors.card,
+          backgroundColor: isUnread ? unreadBg : colors.card,
+          borderLeftWidth: 4,
+          borderLeftColor: isUnread ? colors.primary : 'transparent',
           borderBottomColor: colors.border,
         },
       ]}
@@ -85,7 +86,7 @@ const NotificationCard = ({ notification, onPress, onDelete, onMarkRead }: Props
         </View>
 
         <Text
-          style={[styles.message, { color: isUnread ? colors.textSecondary : colors.textSecondary + '99' }]}
+          style={[styles.message, { color: isUnread ? unreadMessageColor : colors.textSecondary + '99' }]}
           numberOfLines={2}
         >
           {notification.message}

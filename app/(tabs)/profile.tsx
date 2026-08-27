@@ -24,7 +24,7 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import { useToast } from '../../components/Toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useCredits } from '../../hooks/useCredits';
+import { useInspectionPasses } from '../../hooks/useInspectionPasses';
 import { useProfile } from '../../hooks/useProfile';
 import { useSupportTickets } from '../../hooks/useSupportTickets';
 import { callEdgeFunction } from '../../lib/api';
@@ -112,7 +112,7 @@ const ProfileScreen = () => {
     const { profile, loading, signOut, refetch } = useProfile();
     const { registerForPushNotificationsAsync } = useNotifications();
     const [pushEnabled, setPushEnabled] = useState(true);
-    const { credits, loading: creditsLoading } = useCredits();
+    const { remaining: inspectionsRemaining, loading: passesLoading } = useInspectionPasses();
     const { leases, fetchLeases, loading: leasesLoading } = useLeases();
     const { applications, refetch: fetchApplications, loading: appsLoading } = useMyApplications();
     const { tickets } = useSupportTickets();
@@ -243,8 +243,8 @@ const ProfileScreen = () => {
                     {/* Stats Card */}
                     <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
                         <View style={styles.statItem}>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{creditsLoading ? '...' : credits}</Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Units</Text>
+                            <Text style={[styles.statValue, { color: colors.text }]}>{passesLoading ? '...' : inspectionsRemaining}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Inspections</Text>
                         </View>
                         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
                         <View style={styles.statItem}>
@@ -291,10 +291,10 @@ const ProfileScreen = () => {
 
                     <Section title="PAYMENTS">
                         <MenuRow
-                            icon="wallet-outline"
-                            label="Credit Balance"
-                            value={`₦${(credits * 666).toLocaleString()}`}
-                            onPress={() => router.push('/shared-screens/TopUpCreditsScreen')}
+                            icon="key-outline"
+                            label="Inspection Passes"
+                            value={`${inspectionsRemaining} remaining`}
+                            onPress={() => router.push('/shared-screens/InspectionPackScreen')}
                         />
                         <MenuRow
                             icon="receipt-outline"

@@ -17,27 +17,18 @@ import {
 import WebView from 'react-native-webview';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useTheme } from '../../context/ThemeContext';
-import { useCredits } from '../../hooks/useCredits';
+import { useInspectionPasses, INSPECTION_PACK_SIZE, INSPECTION_PRICE, INSPECTION_PACK_TOTAL } from '../../hooks/useInspectionPasses';
 
 const { width } = Dimensions.get('window');
 
-const CREDIT_PRICE = 666;
-const VAT_RATE = 0.075;
+const SUBTOTAL = INSPECTION_PACK_SIZE * INSPECTION_PRICE; // 1,998
+const VAT = Math.round((INSPECTION_PACK_TOTAL - SUBTOTAL) * 100) / 100; // 149.85
 
-const UNLOCK_OPTIONS = [3, 6, 9, 12, 18, 21];
-const BUNDLES = UNLOCK_OPTIONS.map((unlocks) => {
-    const subtotal = unlocks * CREDIT_PRICE;
-    const vat = subtotal * VAT_RATE;
-    const amount = Math.round(subtotal + vat);
-    return { unlocks, subtotal, vat, amount };
-});
-
-const TopUpCreditsScreen = () => {
+const InspectionPackScreen = () => {
     const router = useRouter();
     const { colors, isDark } = useTheme();
-    const { credits, loading, fetchCredits, initializeTopUp, verifyTopUp } = useCredits();
+    const { remaining, used, total, initializePack, verifyPack } = useInspectionPasses();
 
-    const [selectedIndex, setSelectedIndex] = useState(0);
     const [paystackUrl, setPaystackUrl] = useState<string | null>(null);
     const [currentReference, setCurrentReference] = useState<string | null>(null);
     const [verifying, setVerifying] = useState(false);
@@ -88,16 +79,10 @@ const TopUpCreditsScreen = () => {
         });
     };
 
-    const selected = BUNDLES[selectedIndex];
-    const currentBalanceNaira = credits * CREDIT_PRICE;
-    const newBalanceNaira = currentBalanceNaira + selected.amount;
-
-    // Redundant useEffect removed as useCredits handles initial fetch
-
     const handlePay = async () => {
         setProcessing(true);
         try {
-            const data = await initializeTopUp(selected.amount, selected.unlocks);
+            const data = await initializePack();
             if (data) {
                 setCurrentReference(data.reference);
                 closeModal(() => {
@@ -109,16 +94,20 @@ const TopUpCreditsScreen = () => {
         }
     };
 
+    const finishVerify = async (reference: string) => {
+        setPaystackUrl(null);
+        setVerifying(true);
+        const success = await verifyPack(reference);
+        setVerifying(false);
+        if (success) {
+            setCurrentReference(null);
+            router.back();
+        }
+    };
+
     const handleWebviewBack = async () => {
         if (currentReference) {
-            setPaystackUrl(null);
-            setVerifying(true);
-            const success = await verifyTopUp(currentReference);
-            setVerifying(false);
-            if (success) {
-                setCurrentReference(null);
-                await fetchCredits();
-            }
+            await finishVerify(currentReference);
         } else {
             setPaystackUrl(null);
         }
@@ -128,23 +117,17 @@ const TopUpCreditsScreen = () => {
         const url: string = navState.url ?? '';
 
         if (
-            (url.includes('Eden://credits/verify') ||
+            (url.includes('Eden://pack/verify') ||
+                url.includes('edenhome://pack/verify') ||
                 url.includes('paystack-callback') ||
                 url.includes('paystack.co/close') ||
                 url.includes('standard.paystack.co/close')) &&
             currentReference
         ) {
-            setPaystackUrl(null);
-            setVerifying(true);
-            const success = await verifyTopUp(currentReference);
-            setVerifying(false);
-            if (success) {
-                setCurrentReference(null);
-                await fetchCredits();
-            }
+            await finishVerify(currentReference);
         }
 
-        if (url.includes('Eden://credits/cancelled')) {
+        if (url.includes('Eden://pack/cancelled') || url.includes('edenhome://pack/cancelled')) {
             setPaystackUrl(null);
             setCurrentReference(null);
         }
@@ -205,81 +188,53 @@ const TopUpCreditsScreen = () => {
                 {/* Header */}
                 <View style={styles.header}>
                     <BackButton />
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Fund Wallet</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Inspection Bookings</Text>
                     <View style={{ width: 24 }} />
                 </View>
 
                 {/* Balance Card */}
                 <View style={styles.balanceCard}>
                     <View style={styles.balanceCardInner}>
-                        <Text style={styles.balanceLabel}>Wallet Balance</Text>
-                        <Text style={styles.balanceAmount}>
-                            N{(credits * CREDIT_PRICE).toLocaleString()}.00
-                        </Text>
+                        <Text style={styles.balanceLabel}>Inspections Remaining</Text>
+                        <Text style={styles.balanceAmount}>{remaining}</Text>
                         <Text style={styles.balanceUnlocks}>
-                            {credits} service unit{credits !== 1 ? 's' : ''} available
+                            {total > 0
+                                ? `${used} of ${total} properties booked`
+                                : 'No inspections yet — buy 3 to start'}
                         </Text>
                     </View>
                     <View style={styles.balanceIconWrap}>
-                        <Ionicons name="wallet-outline" size={40} color="rgba(255,255,255,0.3)" />
+                        <Ionicons name="eye-outline" size={40} color="rgba(255,255,255,0.3)" />
                     </View>
                 </View>
 
-                {/* Select Recharge */}
+                {/* What you get */}
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Select Deposit Amount
+                    What You Get
                 </Text>
 
-                <View style={styles.bundleGrid}>
-                    {BUNDLES.map((bundle, index) => {
-                        const isSelected = index === selectedIndex;
-                        return (
-                            <TouchableOpacity
-                                key={index}
-                                style={[
-                                    styles.bundleCard,
-                                    {
-                                        backgroundColor: isSelected ? colors.primary : colors.card,
-                                        borderColor: isSelected ? colors.primary : colors.border,
-                                    },
-                                ]}
-                                onPress={() => setSelectedIndex(index)}
-                                activeOpacity={0.8}
-                            >
-                                {isSelected && (
-                                    <View style={styles.bundleCheck}>
-                                        <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                                    </View>
-                                )}
-                                <Text
-                                    style={[
-                                        styles.bundleAmount,
-                                        { color: isSelected ? '#fff' : colors.text },
-                                    ]}
-                                >
-                                    N{bundle.amount.toLocaleString()}
-                                </Text>
-                                <Text
-                                    style={[
-                                        styles.bundleUnlocks,
-                                        { color: isSelected ? 'rgba(255,255,255,0.8)' : colors.textSecondary },
-                                    ]}
-                                >
-                                    {bundle.unlocks} units
-                                </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
+                <View style={[styles.packCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={styles.packIconWrap}>
+                        <Ionicons name="key-outline" size={22} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.packTitle, { color: colors.text }]}>
+                            {INSPECTION_PACK_SIZE} Property Inspections
+                        </Text>
+                        <Text style={[styles.packSubtitle, { color: colors.textSecondary }]}>
+                            View any {INSPECTION_PACK_SIZE} available properties — pick the date, time & WhatsApp number when you book
+                        </Text>
+                    </View>
                 </View>
 
                 {/* Summary Card */}
                 <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.summaryRow}>
                         <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-                            Subtotal ({selected.unlocks} units)
+                            Subtotal ({INSPECTION_PACK_SIZE} inspections × N{INSPECTION_PRICE.toLocaleString()})
                         </Text>
                         <Text style={[styles.summaryValue, { color: colors.text }]}>
-                            N{selected.subtotal.toLocaleString()}
+                            N{SUBTOTAL.toLocaleString()}
                         </Text>
                     </View>
                     <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
@@ -288,7 +243,7 @@ const TopUpCreditsScreen = () => {
                             VAT (7.5%)
                         </Text>
                         <Text style={[styles.summaryValue, { color: colors.text }]}>
-                            N{selected.vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            N{VAT.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </Text>
                     </View>
                     <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
@@ -297,7 +252,7 @@ const TopUpCreditsScreen = () => {
                             Total Payable
                         </Text>
                         <Text style={[styles.summaryValue, { color: colors.primary }]}>
-                            N{selected.amount.toLocaleString()}
+                            N{INSPECTION_PACK_TOTAL.toLocaleString()}
                         </Text>
                     </View>
                 </View>
@@ -306,7 +261,7 @@ const TopUpCreditsScreen = () => {
                 <View style={styles.infoRow}>
                     <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
                     <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                        Each unit costs N{CREDIT_PRICE}
+                        Each inspection costs N{INSPECTION_PRICE.toLocaleString()} — unused bookings stay in your account until you use them
                     </Text>
                 </View>
             </ScrollView>
@@ -319,7 +274,7 @@ const TopUpCreditsScreen = () => {
                     activeOpacity={0.85}
                 >
                     <Text style={styles.ctaText}>
-                        Proceed to pay N{selected.amount.toLocaleString()}
+                        Book {INSPECTION_PACK_SIZE} Inspections — Pay N{INSPECTION_PACK_TOTAL.toLocaleString()}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -363,7 +318,7 @@ const TopUpCreditsScreen = () => {
                             <Text style={[styles.modalTitle, { color: colors.text }]}>Payment Method</Text>
                             <View style={[styles.amountPillBadge, { backgroundColor: colors.primary + '10' }]}>
                                 <Text style={[styles.amountPillText, { color: colors.primary }]}>
-                                    N{selected.amount.toLocaleString()}
+                                    N{INSPECTION_PACK_TOTAL.toLocaleString()}
                                 </Text>
                             </View>
                         </View>
@@ -409,7 +364,7 @@ const TopUpCreditsScreen = () => {
                                 <Text style={[styles.securityTitle, { color: isDark ? '#34D399' : '#065F46' }]}>
                                     All transactions are 256-bit encrypted
                                 </Text>
-                                <Text style={[styles.securitySubtitle, { color: isDark ? '#059669' : '#059669' }]}>
+                                <Text style={[styles.securitySubtitle, { color: '#059669' }]}>
                                     Your payment is 100% secure
                                 </Text>
                             </View>
@@ -426,7 +381,7 @@ const TopUpCreditsScreen = () => {
                                 <ActivityIndicator color="#fff" />
                             ) : (
                                 <Text style={styles.modalPayButtonText}>
-                                    Pay N{selected.amount.toLocaleString()} with Paystack
+                                    Pay N{INSPECTION_PACK_TOTAL.toLocaleString()} with Paystack
                                 </Text>
                             )}
                         </TouchableOpacity>
@@ -504,33 +459,32 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
 
-    // Bundle Grid
-    bundleGrid: {
+    // Pack Card
+    packCard: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
-        marginBottom: 24,
-    },
-    bundleCard: {
-        width: (width - 64) / 3,
+        alignItems: 'center',
         borderRadius: 16,
-        padding: 16,
         borderWidth: 1,
-        position: 'relative',
+        padding: 16,
+        marginBottom: 20,
+        gap: 12,
     },
-    bundleCheck: {
-        position: 'absolute',
-        top: 8,
-        right: 8,
+    packIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#EFF6FF',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    bundleAmount: {
-        fontSize: 16,
-        fontWeight: '800',
-        marginBottom: 4,
+    packTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 2,
     },
-    bundleUnlocks: {
+    packSubtitle: {
         fontSize: 12,
-        fontWeight: '500',
+        lineHeight: 16,
     },
 
     // Summary Card
@@ -552,6 +506,8 @@ const styles = StyleSheet.create({
     summaryLabel: {
         fontSize: 14,
         fontWeight: '500',
+        flex: 1,
+        marginRight: 12,
     },
     summaryValue: {
         fontSize: 15,
@@ -561,13 +517,15 @@ const styles = StyleSheet.create({
     // Info Note
     infoRow: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         gap: 6,
         marginBottom: 20,
     },
     infoText: {
         fontSize: 13,
         fontWeight: '500',
+        flex: 1,
+        lineHeight: 18,
     },
 
     // CTA
@@ -587,7 +545,7 @@ const styles = StyleSheet.create({
     },
     ctaText: {
         color: '#fff',
-        fontSize: 17,
+        fontSize: 16,
         fontWeight: '700',
     },
 
@@ -752,4 +710,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default TopUpCreditsScreen;
+export default InspectionPackScreen;

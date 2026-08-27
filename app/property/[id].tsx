@@ -121,6 +121,7 @@ const PropertyDetailScreen = () => {
     const [bookingDetails, setBookingDetails] = useState<any>(null);
     const [booking, setBooking] = useState(false);
     const [hasApplied, setHasApplied] = useState(false);
+    const [passesRemaining, setPassesRemaining] = useState<number | null>(null);
 
     const propertyId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
 
@@ -202,6 +203,19 @@ const PropertyDetailScreen = () => {
                     setHasApplied(!!appData);
                 } catch (err) {
                     console.warn('Application check notice:', err);
+                }
+
+                // Check how many inspection bookings the tenant has left
+                // (fixed 3-pack, purchased via Paystack — no credit wallet)
+                try {
+                    const { data: passRows } = await supabase
+                        .from('inspection_passes')
+                        .select('id')
+                        .is('used_at', null);
+                    setPassesRemaining(passRows?.length ?? 0);
+                } catch (err) {
+                    console.warn('Passes check notice:', err);
+                    setPassesRemaining(0);
                 }
             };
 
@@ -1001,7 +1015,9 @@ const PropertyDetailScreen = () => {
                                         ? 'Book Again'
                                         : isBooked
                                             ? 'Inspection Booked ✓'
-                                            : 'Book Inspection(₦666)';
+                                            : (passesRemaining ?? 0) > 0
+                                                ? 'Book Inspection'
+                                                : 'Book 3 Inspections (₦2,148)';
 
                             return (
                                 <TouchableOpacity

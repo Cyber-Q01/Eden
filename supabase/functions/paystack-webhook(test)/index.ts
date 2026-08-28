@@ -148,8 +148,14 @@ Deno.serve(async (req) => {
 
         const event = JSON.parse(rawBody);
 
-        // ✅ Reject stale/replayed events (older than 5 minutes)
-        if (event.data?.created_at && isStaleEvent(event.data.created_at)) {
+        // ✅ Reject stale/replayed CHARGE events (older than 5 minutes).
+        // Transfer events are EXEMPT: a transfer can legitimately be
+        // confirmed more than 5 minutes after it was created (bank
+        // processing time), and re-processing one is idempotent — without
+        // this exemption, late-confirmed transfers never mark the payout
+        // success and the rental never releases.
+        const isTransferEvent = typeof event.event === 'string' && event.event.startsWith('transfer.');
+        if (!isTransferEvent && event.data?.created_at && isStaleEvent(event.data.created_at)) {
             console.warn('⚠️ Stale event rejected — possible replay attack');
             console.warn('Event created_at:', event.data.created_at);
             return jsonResponse({ received: true, note: 'stale event ignored' });
@@ -484,20 +490,24 @@ Deno.serve(async (req) => {
                 console.error('Transfer FAILED:', transferRef);
                 console.error('Reason:', failureReason ?? 'No reason provided');
 
-                // ✅ Update payout record to failed
+                // ✅ Update payout record to failed (fetch existing metadata
+                //    first — the old version passed a live Promise here,
+                //    which serialized to {} and wiped the metadata)
+                const { data: failedPayout } = await admin
+                    .from('payouts')
+                    .select('metadata')
+                    .eq('transfer_reference', transferRef)
+                    .maybeSingle();
+
                 const { error: payoutUpdateError } = await admin
                     .from('payouts')
                     .update({
                         status: 'failed',
-                        metadata: admin.from('payouts')
-                            .select('metadata')
-                            .eq('transfer_reference', transferRef)
-                            .single()
-                            .then(({ data }) => ({
-                                ...(data?.metadata ?? {}),
-                                failure_reason: failureReason ?? 'Unknown error',
-                                failed_at: new Date().toISOString(),
-                            })),
+                        metadata: {
+                            ...(failedPayout?.metadata ?? {}),
+                            failure_reason: failureReason ?? 'Unknown error',
+                            failed_at: new Date().toISOString(),
+                        },
                     })
                     .eq('transfer_reference', transferRef);
 

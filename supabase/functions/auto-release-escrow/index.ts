@@ -13,6 +13,12 @@
 //     `bank_accounts.paystack_recipient_code` + `payouts` tables use).
 //   * Owners without a recipient code yet are skipped (left for the normal
 //     flow / support) instead of failing.
+//   * Recipient code is read from payment_accounts first (prod's
+//     release-payment uses that table), falling back to bank_accounts.
+//   * Rentals whose payout is already 'pending' (prod's transfer in flight,
+//     awaiting the transfer.success webhook) are NEVER transferred again.
+//   * A payout row is always written BEFORE the rental flips to released —
+//     released and payouts can never drift apart via this path.
 //
 // Triggered every 15 minutes by Supabase's built-in scheduler.
 //
@@ -109,13 +115,55 @@ Deno.serve(async (_req) => {
 
     // B) Load the owner's payout details
     const { data: owner } = await service.from('users').select('email, first_name, last_name').eq('id', rental.owner_id).maybeSingle();
+    // Recipient code lives in payment_accounts in prod (release-payment
+    // reads it there) — check that first, fall back to bank_accounts.
+    const { data: paymentAccount } = await service
+      .from('payment_accounts')
+      .select('paystack_recipient_code')
+      .eq('user_id', rental.owner_id)
+      .maybeSingle();
     const { data: bank } = await service.from('bank_accounts').select('paystack_recipient_code, bank_name, account_number').eq('user_id', rental.owner_id).maybeSingle();
+    const recipientCode: string | null =
+      paymentAccount?.paystack_recipient_code || bank?.paystack_recipient_code || null;
 
-    if (!owner?.email || !bank?.paystack_recipient_code) {
+    if (!owner?.email || !recipientCode) {
       // No recipient on file — leave in 'confirmed' for the normal flow
       // (prod's create-owner-recipient / support path will complete it).
       summary.skipped += 1;
       summary.details.push({ rental: rental.id, step: 'skip', reason: !owner?.email ? 'owner email missing' : 'no paystack_recipient_code on file' });
+      continue;
+    }
+
+    // B2) Self-heal: a payout already SUCCEEDED for this rental (a previous
+    //     run paid the transfer but crashed before flipping the rental).
+    //     NEVER transfer twice — just sync the rental to released.
+    const { data: existingPayouts } = await service
+      .from('payouts')
+      .select('id, status, transfer_reference')
+      .eq('rental_id', rental.id);
+    const succeededPayout = (existingPayouts ?? []).find((p: any) => p.status === 'success');
+    if (succeededPayout) {
+      await service
+        .from('rentals')
+        .update({
+          status: 'released',
+          transfer_reference: succeededPayout.transfer_reference,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', rental.id);
+      summary.released += 1;
+      summary.details.push({ rental: rental.id, step: 'healed-already-paid', reference: succeededPayout.transfer_reference });
+      continue;
+    }
+
+    const pendingPayout = (existingPayouts ?? []).find((p: any) => p.status === 'pending');
+    if (pendingPayout) {
+      // Prod's release-payment creates the payout BEFORE the transfer and
+      // waits for the transfer.success webhook. That transfer is in flight —
+      // do NOT send a second one. The webhook (or next run's heal above)
+      // finishes the job.
+      summary.skipped += 1;
+      summary.details.push({ rental: rental.id, step: 'skip', reason: 'payout pending — transfer already in flight' });
       continue;
     }
 
@@ -132,7 +180,7 @@ Deno.serve(async (_req) => {
           email: owner.email,
           amount: kobo,
           currency: 'NGN',
-          recipient_code: bank.paystack_recipient_code,
+          recipient_code: recipientCode,
           reason: `Eden escrow payout — ${rental.paystack_reference}`,
         }),
       });
@@ -153,21 +201,28 @@ Deno.serve(async (_req) => {
 
     // D) Record the result
     if (transferError) {
-      await service.from('payouts').insert({
-        rental_id: rental.id,
-        owner_id: rental.owner_id,
-        amount: Number(rental.owner_payout ?? rental.amount),
-        platform_fee: Number(rental.platform_fee ?? 0),
-        transfer_reference: transferRef || `failed-${rental.id}`,
-        transfer_code: transferCode,
-        paystack_recipient_code: bank.paystack_recipient_code,
-        status: 'failed',
-        metadata: { source: 'auto-release-48h', error: transferError.slice(0, 500) },
-      });
+      // Upsert (not insert): one ledger row per rental — repeated failed
+      // attempts update the same row instead of piling up duplicates.
+      await service.from('payouts').upsert(
+        {
+          rental_id: rental.id,
+          owner_id: rental.owner_id,
+          amount: Number(rental.owner_payout ?? rental.amount),
+          platform_fee: Number(rental.platform_fee ?? 0),
+          transfer_reference: transferRef || `failed-${rental.id}`,
+          transfer_code: transferCode,
+          paystack_recipient_code: recipientCode,
+          status: 'failed',
+          metadata: { source: 'auto-release-48h', error: transferError.slice(0, 500) },
+        },
+        { onConflict: 'rental_id' },
+      );
       // Leave rental in 'confirmed' — set B retries on the next cron run.
       summary.failed += 1;
       summary.details.push({ rental: rental.id, step: 'transfer', error: transferError, reference: transferRef || null });
     } else {
+      // Ledger row FIRST, release second — a rental must never be
+      // 'released' without a payout row existing.
       const { error: payErr } = await service.from('payouts').upsert(
         {
           rental_id: rental.id,
@@ -176,21 +231,32 @@ Deno.serve(async (_req) => {
           platform_fee: Number(rental.platform_fee ?? 0),
           transfer_reference: transferRef,
           transfer_code: transferCode,
-          paystack_recipient_code: bank.paystack_recipient_code,
+          paystack_recipient_code: recipientCode,
           status: 'success',
           completed_at: new Date().toISOString(),
           metadata: { source: 'auto-release-48h' },
         },
         { onConflict: 'rental_id' },
       );
+      if (payErr) {
+        // Transfer DID go through — do NOT re-run it. Backfill the payouts
+        // row manually (reference is in the error log below).
+        console.error(
+          `[auto-release-escrow] TRANSFER SUCCEEDED (${transferRef}) but payout row write failed for rental ${rental.id}: ${payErr.message} — backfill payouts manually, do NOT re-run the transfer`,
+        );
+        summary.failed += 1;
+        summary.details.push({ rental: rental.id, step: 'record-payout', error: payErr.message, reference: transferRef });
+        continue;
+      }
       const { error: relErr } = await service
         .from('rentals')
         .update({ status: 'released', transfer_reference: transferRef, updated_at: new Date().toISOString() })
         .eq('id', rental.id)
         .eq('status', 'confirmed');
-      if (payErr || relErr) {
+      if (relErr) {
+        // Payout row is safe — next run's B2 heal flips the rental over.
         summary.failed += 1;
-        summary.details.push({ rental: rental.id, step: 'record', error: payErr?.message || relErr?.message });
+        summary.details.push({ rental: rental.id, step: 'record-release', error: relErr?.message });
       } else {
         summary.released += 1;
         summary.details.push({ rental: rental.id, step: 'released', reference: transferRef });

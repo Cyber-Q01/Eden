@@ -88,16 +88,21 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
   const authHeader = req.headers.get('Authorization') ?? '';
-  const service = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    { global: { headers: { Authorization: authHeader } } },
-  );
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-  // 1) Who is calling? (their own JWT)
-  const { data: { user } } = await service.auth.getUser();
+  // 1) Who is calling? — identified with their own JWT, via a caller-scoped
+  //    client. (All privileged work below runs on the CLEAN service client —
+  //    GoTrue admin endpoints and cross-table writes require the service
+  //    key; attaching the user's JWT to them made those calls 401.)
+  const caller = createClient(supabaseUrl, serviceKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user } } = await caller.auth.getUser();
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
   const userId = user.id;
+
+  const service = createClient(supabaseUrl, serviceKey);
 
   // 2) Confirm the profile row exists
   const { data: profile, error: profileErr } = await service
@@ -108,7 +113,27 @@ Deno.serve(async (req) => {
   if (profileErr) return jsonResponse({ error: profileErr.message }, 500);
   if (!profile) return jsonResponse({ error: 'Profile not found' }, 404);
 
-  // 3) Delete personal data (per-table, failures don't abort the rest)
+  // 3) Guard: block deletion while any rental involving this user is in
+  //    flight — deleting would strand escrow money (the payout could never
+  //    run, the tenant's dispute rights would vanish, and the property
+  //    would sit 'taken' with no reachable renter).
+  const { data: activeRentals, error: activeErr } = await service
+    .from('rentals')
+    .select('id')
+    .or(`renter_id.eq.${userId},owner_id.eq.${userId}`)
+    .in('status', ['awaiting_payment', 'awaiting_confirmation', 'confirmed', 'disputed']);
+  if (activeErr) return jsonResponse({ error: activeErr.message }, 500);
+  if (activeRentals && activeRentals.length > 0) {
+    return jsonResponse(
+      {
+        error: `You have ${activeRentals.length} active rental(s) in progress. They must be completed, released, or refunded before you can delete your account.`,
+        active_rentals: activeRentals.length,
+      },
+      409,
+    );
+  }
+
+  // 4) Delete personal data (per-table, failures don't abort the rest)
   const targets = [...PERSONAL_DATA];
   if (profile.role === 'LANDLORD' || profile.role === 'AGENT') targets.push(...LANDLORD_DATA);
   else targets.push(...TENANT_SUPPORT);
@@ -123,10 +148,8 @@ Deno.serve(async (req) => {
     }),
   );
 
-  // 4) Delete OAuth identities (Google / Apple / email) so no sign-in method
+  // 5) Delete OAuth identities (Google / Apple / email) so no sign-in method
   //    can ever match this person again. GoTrue admin REST.
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   let identitiesRemoved = 0;
   try {
     const { data: fullUser, error: idErr } = await service.auth.admin.getUserById(userId);
@@ -146,7 +169,7 @@ Deno.serve(async (req) => {
     failed.push(`identities (${(e as Error).message.slice(0, 80)})`);
   }
 
-  // 5) Tombstone the identity: generated email + random password, wipe PII.
+  // 6) Tombstone the identity: generated email + random password, wipe PII.
   const tombstoneEmail = `deleted-${userId.replace(/-/g, '')}@deleted.eden.invalid`;
   try {
     await service.auth.admin.updateUserById(userId, {

@@ -197,7 +197,13 @@ const ProfileScreen = () => {
         if (!user || deletingAccount) return;
         setDeletingAccount(true);
         try {
-            await callEdgeFunction('delete-account', 'POST');
+            const data = await callEdgeFunction<{ success?: boolean; failed?: string[] }>('delete-account', 'POST');
+            // The EF reports partial failures in `failed` — never show a
+            // fake success if any step (tombstone, identities, ...) didn't
+            // actually complete.
+            if (data && data.success === false) {
+                throw new Error((data.failed ?? []).join('; ') || 'Deletion did not complete. Please contact support.');
+            }
             setShowDeleteModal(false);
             showSuccess('Your account and personal data have been deleted.');
             await signOut();
@@ -451,8 +457,11 @@ const ProfileScreen = () => {
                         <Text style={[styles.modalSubtitle, { color: colors.textSecondary, textAlign: 'left', marginBottom: 10 }]}>
                             This permanently deletes your profile, ID/KYC data (NIN, ID photos), applications, favorites, chats and support tickets. If you own listings, your properties and bank details are deleted too.
                         </Text>
-                        <Text style={[styles.modalSubtitle, { color: colors.textSecondary, fontSize: 13, marginBottom: 28 }]}>
+                        <Text style={[styles.modalSubtitle, { color: colors.textSecondary, fontSize: 13, marginBottom: 10 }]}>
                             Payment and rental transaction records are kept (anonymized) as required for legal and tax compliance. This cannot be undone.
+                        </Text>
+                        <Text style={[styles.modalSubtitle, { color: colors.textSecondary, fontSize: 13, marginBottom: 28 }]}>
+                            Accounts with active rentals in progress can only be deleted after those rentals are completed, released, or refunded.
                         </Text>
                         <TouchableOpacity
                             style={[styles.modalSignOutBtn, { backgroundColor: '#EF4444' }, deletingAccount && { opacity: 0.7 }]}

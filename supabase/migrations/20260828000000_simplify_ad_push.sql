@@ -23,8 +23,9 @@
 -- AFTER running this, the ENTIRE setup is:
 --   supabase functions deploy send-ad-notification --no-verify-jwt --cron "*/15 * * * *"
 --   supabase functions deploy auto-release-escrow  --no-verify-jwt --cron "*/15 * * * *"
---   Set env EXPO_PUSH_ACCESS_TOKEN on the first, PAYSTACK_SECRET_KEY on the
---   second. Done.
+--   Set env PAYSTACK_SECRET_KEY on auto-release-escrow. send-ad-notification
+--   needs NO env vars (same unauthenticated Expo endpoint as your existing
+--   send-push-notification). Done.
 --
 -- NOTE on existing ads: active ads created before this flag existed have
 -- push_sent_at = NULL, so the scheduled function will push them one per

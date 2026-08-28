@@ -952,25 +952,39 @@ const PropertyDetailScreen = () => {
                 </View>
             </ScrollView>
 
-            {/* ─── BOTTOM ACTION BUTTONS (Apply To Rent & Book Inspection) ───── */}
+            {/* ─── BOTTOM ACTION BUTTONS (Apply for Property & Book Inspection) ───── */}
             <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 {isLandlordOrAgent ? (
-                    <TouchableOpacity
-                        style={[styles.applyButton, { backgroundColor: isPendingModeration ? '#9CA3AF' : colors.primary }]}
-                        onPress={handleEditListing}
-                    >
-                        <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.buttonText}>
-                            {isPendingModeration ? 'Listing Under Review' : 'Edit Listing'}
-                        </Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionRow}>
+                        <TouchableOpacity
+                            style={[styles.applyButton, { backgroundColor: isPendingModeration ? '#9CA3AF' : colors.primary }]}
+                            onPress={handleEditListing}
+                        >
+                            <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                            <Text style={styles.buttonText}>
+                                {isPendingModeration ? 'Listing Under Review' : 'Edit Listing'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 ) : (
                     <>
-                        {/* Apply To Rent (Left Orange Pill Button)
+                        {/* Small info: an inspection must be booked before applying */}
+                        {!isSale && !isBooked && (
+                            <View style={styles.applyInfoRow}>
+                                <Ionicons name="information-circle" size={14} color={isDark ? '#FDBA74' : '#B45309'} />
+                                <Text style={[styles.applyInfoNote, { color: isDark ? '#FDBA74' : '#B45309' }]}>
+                                    Book an inspection of this property before you can apply.
+                                </Text>
+                            </View>
+                        )}
+                        <View style={styles.actionRow}>
+                        {/* Apply for Property (Left Orange Pill Button)
                             Rule: a property MUST be booked (inspection booked by this
                             tenant) before they can apply — whether the booking date has
                             passed or not, and whether the booking is completed or not.
-                            Unbooked, unavailable, sale, and repeat applications are blocked. */}
+                            Unbooked, unavailable, sale, and repeat applications are blocked.
+                            The label stays "Apply for Property"; the info line above the
+                            buttons explains that an inspection must be booked first. */}
                         {(() => {
                             const propertyUnavailable = property.status !== 'available' && property.status !== 'taken';
                             const notYetBooked = !isBooked;
@@ -982,9 +996,7 @@ const PropertyDetailScreen = () => {
                                     ? 'Applied ✓'
                                     : isSale
                                         ? 'For Sale'
-                                        : notYetBooked
-                                            ? 'Book Inspection First'
-                                            : 'Apply To Rent';
+                                        : 'Apply for Property';
 
                             return (
                                 <TouchableOpacity
@@ -1033,6 +1045,7 @@ const PropertyDetailScreen = () => {
                                 </TouchableOpacity>
                             );
                         })()}
+                        </View>
                     </>
                 )}
             </View>
@@ -1147,8 +1160,7 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        flexDirection: 'row',
-        gap: 12,
+        gap: 10,
         paddingHorizontal: 20,
         paddingVertical: 14,
         paddingBottom: Platform.OS === 'ios' ? 34 : 16,
@@ -1158,6 +1170,22 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.06,
         shadowRadius: 8,
         elevation: 10,
+    },
+    actionRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    applyInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 4,
+    },
+    applyInfoNote: {
+        flex: 1,
+        fontSize: 11.5,
+        fontWeight: '600',
+        lineHeight: 15,
     },
     applyOrangeBtn: {
         flex: 1,

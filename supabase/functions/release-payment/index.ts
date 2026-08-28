@@ -155,24 +155,44 @@ Deno.serve(async (req) => {
             });
         }
 
-        // ── Fetch owner bank account (metadata only) ─────────────────────
-        const { data: bankAccount } = await admin
+        // ── Fetch owner's bank account + Paystack recipient ──────────────
+        // Source of truth: bank_accounts (ONE row per user — upserted by the
+        // bank-details flow, which now writes the recipient code onto this
+        // row). payment_accounts is only a legacy fallback for owners whose
+        // code predates that. No .single() — a missing/extra row must not
+        // kill the release, it just means "no code found yet".
+        const { data: bankAccounts } = await admin
             .from('bank_accounts')
-            .select('bank_name, account_number, account_name')
-            .eq('user_id', rental.owner_id)
-            .maybeSingle();
+            .select('bank_name, account_number, account_name, paystack_recipient_code')
+            .eq('user_id', rental.owner_id);
 
-        // ── Fetch owner's Paystack recipient (payment_accounts is the
-        //     source of truth — that is where the recipient lives in prod)
-        const { data: paymentAccount, error: paymentAccountError } = await admin
-            .from('payment_accounts')
-            .select('paystack_recipient_code')
-            .eq('user_id', rental.owner_id)
-            .single();
+        const bankAccount = bankAccounts?.[0] ?? null;
+        let recipientCode: string | null =
+            bankAccounts?.find((b: any) => b.paystack_recipient_code)?.paystack_recipient_code ?? null;
 
-        if (paymentAccountError || !paymentAccount || !paymentAccount.paystack_recipient_code) {
-            console.error('Payment account error:', paymentAccountError?.message);
-            return errorResponse('Owner has no Paystack recipient code setup. Please have them update their bank details.', 400);
+        if (!recipientCode) {
+            // Legacy fallback — older saves only wrote payment_accounts
+            const { data: paymentAccounts } = await admin
+                .from('payment_accounts')
+                .select('paystack_recipient_code')
+                .eq('user_id', rental.owner_id);
+            recipientCode =
+                paymentAccounts?.find((p: any) => p.paystack_recipient_code)?.paystack_recipient_code ?? null;
+            if (recipientCode) console.log('Recipient resolved from legacy payment_accounts');
+        }
+
+        console.log('Recipient lookup:', {
+            bank_accounts_rows: bankAccounts?.length ?? 0,
+            has_recipient_code: !!recipientCode,
+        });
+
+        if (!recipientCode) {
+            console.error('No Paystack recipient code for owner', rental.owner_id,
+                '(bank_accounts rows:', bankAccounts?.length ?? 0, ')');
+            return errorResponse(
+                'Owner has no payout account setup yet. Please have them save their bank details in the app so their Paystack payout account is created.',
+                400
+            );
         }
 
         const transferRef = `TRF-${rental_id}-${Date.now()}`;
@@ -192,7 +212,7 @@ Deno.serve(async (req) => {
                 amount: rental.owner_payout,
                 platform_fee: rental.platform_fee,
                 transfer_reference: transferRef,
-                paystack_recipient_code: paymentAccount.paystack_recipient_code,
+                paystack_recipient_code: recipientCode,
                 status: 'pending',
                 metadata: {
                     property_id: rental.property_id,
@@ -219,7 +239,7 @@ Deno.serve(async (req) => {
             transferData = await paystackRequest('/transfer', 'POST', {
                 source: 'balance',
                 amount: amountInKobo,
-                recipient: paymentAccount.paystack_recipient_code,
+                recipient: recipientCode,
                 reference: transferRef,
                 reason: `EdenHome rent payout — rental ${rental_id}`,
             });

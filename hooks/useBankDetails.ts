@@ -57,13 +57,18 @@ export const useBankDetails = () => {
         if (!user) return { error: 'Not authenticated' };
         setSaving(true);
         try {
-            await callEdgeFunction('bank-details', 'POST', {
+            const data = await callEdgeFunction<{ recipient_created?: boolean; message?: string }>('bank-details', 'POST', {
                 bank_name: bank,
                 account_number: accountNumber,
                 account_name: accountName,
                 bank_code: bankCode
             });
-            showSuccess('Bank details saved successfully');
+            if (data && data.recipient_created === false) {
+                // Bank row saved, but the Paystack payout account couldn't be created
+                showSuccess(data.message || 'Bank details saved, but payout account setup needs another try — please save your details again or contact support.');
+            } else {
+                showSuccess('Bank details saved successfully — payouts are ready.');
+            }
             await fetchBankDetails();
             return { error: null };
         } catch (e) {

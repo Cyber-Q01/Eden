@@ -169,7 +169,9 @@ Deno.serve(async (req) => {
       const businessName = biodata?.business_name || `${profile?.first_name} ${profile?.last_name}` || 'EdenHome Landlord';
       console.log(`[POST] Creating subaccount for business: ${businessName}`);
 
-      // 3. Create Paystack Subaccount
+      // 3. Create Paystack Subaccount (non-fatal — payouts use the transfer
+      //    recipient, not split settlements)
+      let subaccountCode: string | null = null;
       try {
         const secretKey = Deno.env.get('PAYSTACK_SECRET_KEY');
         const paystackRes = await fetch('https://api.paystack.co/subaccount', {
@@ -190,61 +192,94 @@ Deno.serve(async (req) => {
         console.log(`[POST] Paystack subaccount status: ${paystackData.status}`);
 
         if (paystackData.status) {
-          const subaccountCode = paystackData.data.subaccount_code;
+          subaccountCode = paystackData.data.subaccount_code;
           console.log(`[POST] Storing subaccount code: ${subaccountCode}`);
-
-          // 3b. Create Paystack Transfer Recipient (needed for the /transfer endpoint used in release-payments)
-          console.log('[POST] Creating transfer recipient...');
-          const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${secretKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              type: 'nuban',
-              name: account_name,
-              account_number: account_number,
-              bank_code: bank_code,
-              currency: 'NGN',
-              metadata: {
-                user_id: userId,
-              }
-            }),
-          });
-
-          const recipientData = await recipientRes.json();
-          let recipientCode = null;
-          if (recipientData.status) {
-            recipientCode = recipientData.data.recipient_code;
-            console.log(`[POST] Transfer recipient created: ${recipientCode}`);
-          } else {
-            console.error('[POST] Paystack Recipient Error:', recipientData.message);
-          }
-
-          // 4. Store Subaccount & Recipient Code
-          const { error: subError } = await supabaseAdmin
-            .from('payment_accounts')
-            .upsert({
-              user_id: userId,
-              bank_account_id: bankData.id,
-              paystack_subaccount_code: subaccountCode,
-              paystack_recipient_code: recipientCode,
-            }, { onConflict: 'user_id' });
-
-          if (subError) {
-            console.error('[POST] payment_accounts upsert error:', subError);
-          }
         } else {
-          console.error('[POST] Paystack Subaccount Error:', paystackData.message);
-          return errorResponse(`Paystack Error: ${paystackData.message}`, 400);
+          // e.g. re-saving the same account — subaccount already exists.
+          // Non-fatal: transfers do not require a subaccount.
+          console.warn('[POST] Paystack Subaccount Error (non-fatal):', paystackData.message);
         }
       } catch (e) {
-        console.error('[POST] Paystack API Exception:', e.message);
-        return errorResponse(`API Exception: ${e.message}`, 500);
+        console.warn('[POST] Subaccount exception (non-fatal):', e.message);
       }
 
-      return jsonResponse({ success: true });
+      // 4. Create Paystack Transfer Recipient — the code release-payment pays to (CRITICAL)
+      let recipientCode: string | null = null;
+      let recipientId: string | null = null;
+      try {
+        const secretKey = Deno.env.get('PAYSTACK_SECRET_KEY');
+        console.log('[POST] Creating transfer recipient...');
+        const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'nuban',
+            name: account_name,
+            account_number: account_number,
+            bank_code: bank_code,
+            currency: 'NGN',
+            metadata: {
+              user_id: userId,
+            }
+          }),
+        });
+
+        const recipientData = await recipientRes.json();
+        if (recipientData.status) {
+          recipientCode = recipientData.data.recipient_code;
+          recipientId = recipientData.data.recipient_id != null ? String(recipientData.data.recipient_id) : null;
+          console.log(`[POST] Transfer recipient created: ${recipientCode}`);
+        } else {
+          console.error('[POST] Paystack Recipient Error:', recipientData.message);
+        }
+      } catch (e) {
+        console.error('[POST] Recipient exception:', e.message);
+      }
+
+      // 5. Store the recipient code on the user's bank_accounts row — this is
+      //    the source of truth for payouts (one row per user, updated in place).
+      if (recipientCode) {
+        const { error: baUpdateErr } = await supabaseAdmin
+          .from('bank_accounts')
+          .update({
+            paystack_recipient_code: recipientCode,
+            paystack_recipient_id: recipientId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', userId);
+        if (baUpdateErr) console.error('[POST] bank_accounts recipient update error:', baUpdateErr.message);
+      }
+
+      // 6. Legacy sync: payment_accounts (only when a subaccount code exists —
+      //    paystack_subaccount_code is NOT NULL there). Older readers still work.
+      if (subaccountCode) {
+        const { error: subError } = await supabaseAdmin
+          .from('payment_accounts')
+          .upsert({
+            user_id: userId,
+            bank_account_id: bankData.id,
+            paystack_subaccount_code: subaccountCode,
+            paystack_recipient_code: recipientCode,
+          }, { onConflict: 'user_id' });
+
+        if (subError) {
+          console.error('[POST] payment_accounts upsert error:', subError);
+        }
+      }
+
+      if (!recipientCode) {
+        // Bank details ARE saved, but payouts to this account are not set up yet.
+        return jsonResponse({
+          success: true,
+          recipient_created: false,
+          message: 'Bank details saved, but your payout account could not be set up yet. Please save your bank details again, or contact support.',
+        });
+      }
+
+      return jsonResponse({ success: true, recipient_created: true });
     }
 
     return errorResponse('Method not allowed', 405);

@@ -122,17 +122,15 @@ export const usePayment = () => {
   const confirmRental = async (rentalId: string): Promise<boolean> => {
     setLoading(true);
     try {
-      let released: boolean | null = null;
-      try {
-        // release-payment v2 verifies the transfer inside the function
-        // (up to ~35s on queued live transfers) — give it room.
-        const data = await callEdgeFunction<{ released?: boolean }>(
-          'release-payment', 'POST', { rental_id: rentalId }, undefined, { timeout: 45000 }
-        );
-        released = data?.released ?? null;
-      } catch (edgeErr) {
-        await callEdgeFunction('confirm-rental', 'POST', { rental_id: rentalId }, undefined, { timeout: 45000 });
-      }
+      // NOTE: there is deliberately NO confirm-rental fallback here. If
+      // release-payment fails, the money has NOT moved — marking the rental
+      // 'confirmed' would deadlock it (the auto-release cron only picks up
+      // 'awaiting_confirmation' rows). The tenant sees the real error and
+      // the row self-heals via retry / cron once the issue is fixed.
+      const data = await callEdgeFunction<{ released?: boolean }>(
+        'release-payment', 'POST', { rental_id: rentalId }, undefined, { timeout: 45000 }
+      );
+      const released = data?.released ?? null;
       if (released === false) {
         showSuccess('Apartment confirmed! Funds are being released to the owner — this can take a few minutes.');
       } else {

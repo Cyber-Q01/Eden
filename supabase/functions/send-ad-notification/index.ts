@@ -6,7 +6,8 @@
 //   2. Set the flag (push_sent_at = now()) BEFORE sending, so an ad can
 //      never be pushed twice
 //   3. Push the ad to every opted-in user (push_token set +
-//      push_notifications_enabled) via the Expo Push API
+//      push_notifications_enabled) via the Expo Push API — deduped by token,
+//      so a shared device with multiple accounts only gets ONE notification
 //
 // HOW IT TALKS TO EXPO — the same way your existing send-push-notification
 // function does (verified against the official Expo server SDK source):
@@ -143,9 +144,13 @@ Deno.serve(async (_req) => {
       .eq('push_notifications_enabled', true);
     if (usersError) throw usersError;
 
-    const tokens = (users ?? []).map((u: any) => u.push_token).filter(Boolean);
+    // Shared phone => shared push token. Dedupe so one physical device gets
+    // the ad at most ONCE, no matter how many accounts sit on it.
+    const tokens: string[] = Array.from(
+      new Set((users ?? []).map((u: any) => u.push_token).filter(Boolean)),
+    );
     if (tokens.length === 0) {
-      return jsonResponse({ ok: true, ad_id: ad.id, users: 0, delivered: 0 });
+      return jsonResponse({ ok: true, ad_id: ad.id, devices: 0, delivered: 0 });
     }
 
     // 4) Fan-out to Expo. Optional access token: only sent if configured
@@ -191,8 +196,8 @@ Deno.serve(async (_req) => {
     // 5) Record reach on the ad row itself (no log table needed).
     await admin.from('advertisements').update({ push_users: delivered }).eq('id', ad.id);
 
-    console.log(`[send-ad-notification] pushed ad ${ad.id} ("${ad.title}") to ${delivered}/${tokens.length} devices`);
-    return jsonResponse({ ok: true, ad_id: ad.id, users: tokens.length, delivered, rejected });
+    console.log(`[send-ad-notification] pushed ad ${ad.id} ("${ad.title}") to ${delivered}/${tokens.length} unique devices (${(users ?? []).length} accounts)`);
+    return jsonResponse({ ok: true, ad_id: ad.id, devices: tokens.length, accounts: (users ?? []).length, delivered, rejected });
   } catch (e: any) {
     console.error('[send-ad-notification] error:', e?.message || e);
     return jsonResponse({ error: String(e?.message || e) }, 500);

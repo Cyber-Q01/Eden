@@ -86,6 +86,8 @@ export const useUnreleasedEscrowCount = () => {
         },
         enabled: !!user,
         staleTime: 30_000,
+        // Tab layout stays mounted — interval keeps the badge fresh (same as applications badge)
+        refetchInterval: 30_000,
     });
 
     return data ?? 0;

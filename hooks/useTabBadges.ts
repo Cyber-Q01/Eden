@@ -22,6 +22,9 @@ export const usePendingApplicationsCount = () => {
         },
         enabled: !!user,
         staleTime: 30_000,
+        // The tab layout stays mounted, so without an interval the badge would go
+        // permanently stale (e.g. owner accepts/declines from their device).
+        refetchInterval: 30_000,
     });
 
     return data ?? 0;

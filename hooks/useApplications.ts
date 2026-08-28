@@ -253,6 +253,8 @@ export const useMyApplications = () => {
 
       queryClient.invalidateQueries({ queryKey: ['my-applications'] });
       queryClient.invalidateQueries({ queryKey: ['landlord-applications'] });
+      // Tab badge counts its own query — invalidate it so the counter updates instantly on apply
+      queryClient.invalidateQueries({ queryKey: ['badge-pending-applications'] });
 
       // 2. Push notification to the landlord (non-fatal — never blocks the submit)
       if (ownerId) {

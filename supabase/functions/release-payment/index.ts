@@ -94,6 +94,59 @@ async function createNotification(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Self-heal: create a Paystack transfer recipient from the owner's
+// bank_accounts row and persist the code back onto that row. Used by the
+// release flow when a payout is due but no recipient code exists yet
+// (owner saved bank details before recipient setup existed, or recipient
+// creation failed at save time). Returns null if it can't be created.
+async function createRecipientFromBankRow(
+    admin: ReturnType<typeof createAdminClient>,
+    userId: string,
+    bankRow: { account_number?: string | null; account_name?: string | null; bank_code?: string | null } | null
+): Promise<string | null> {
+    if (!bankRow || !bankRow.account_number || !bankRow.account_name || !bankRow.bank_code) {
+        console.error('Cannot create recipient on the fly — bank_accounts row is missing account_number/account_name/bank_code');
+        return null;
+    }
+    try {
+        const secretKey = Deno.env.get('PAYSTACK_SECRET_KEY') ?? '';
+        const res = await fetch(`${PAYSTACK_BASE}/transferrecipient`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${secretKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                type: 'nuban',
+                name: bankRow.account_name,
+                account_number: bankRow.account_number,
+                bank_code: bankRow.bank_code,
+                currency: 'NGN',
+                metadata: { user_id: userId, created_by: 'release-payment' },
+            }),
+        });
+        const json = await res.json();
+        if (!json.status || !json.data?.recipient_code) {
+            console.error('On-the-fly recipient creation failed:', json.message);
+            return null;
+        }
+        const code: string = json.data.recipient_code;
+        const { error: updErr } = await admin
+            .from('bank_accounts')
+            .update({
+                paystack_recipient_code: code,
+                paystack_recipient_id: json.data.recipient_id != null ? String(json.data.recipient_id) : null,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId);
+        if (updErr) console.error('Failed to persist new recipient code:', updErr.message);
+        return code;
+    } catch (e: any) {
+        console.error('On-the-fly recipient creation error:', e.message);
+        return null;
+    }
+}
+
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -163,7 +216,7 @@ Deno.serve(async (req) => {
         // kill the release, it just means "no code found yet".
         const { data: bankAccounts } = await admin
             .from('bank_accounts')
-            .select('bank_name, account_number, account_name, paystack_recipient_code')
+            .select('bank_name, account_number, account_name, bank_code, paystack_recipient_code')
             .eq('user_id', rental.owner_id);
 
         const bankAccount = bankAccounts?.[0] ?? null;
@@ -187,12 +240,22 @@ Deno.serve(async (req) => {
         });
 
         if (!recipientCode) {
-            console.error('No Paystack recipient code for owner', rental.owner_id,
-                '(bank_accounts rows:', bankAccounts?.length ?? 0, ')');
-            return errorResponse(
-                'Owner has no payout account setup yet. Please have them save their bank details in the app so their Paystack payout account is created.',
-                400
-            );
+            // Self-heal: the owner HAS bank details on file but no recipient
+            // code (saved before recipient setup existed, or recipient creation
+            // failed at save time). Create the recipient right now from their
+            // bank_accounts row, persist the code, and continue the release.
+            console.log('No recipient code on file — creating one on the fly from the owner\'s bank details...');
+            recipientCode = await createRecipientFromBankRow(admin, rental.owner_id, bankAccount);
+
+            if (!recipientCode) {
+                console.error('No Paystack recipient code for owner', rental.owner_id,
+                    '(bank_accounts rows:', bankAccounts?.length ?? 0, ') — on-the-fly creation failed');
+                return errorResponse(
+                    'Owner has no payout account setup yet. Please have them save their bank details in the app so their Paystack payout account is created.',
+                    400
+                );
+            }
+            console.log('✅ Recipient created on the fly and saved to bank_accounts:', recipientCode);
         }
 
         const transferRef = `TRF-${rental_id}-${Date.now()}`;

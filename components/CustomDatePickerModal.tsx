@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Modal,
     Platform,
@@ -64,31 +64,44 @@ export const CustomDatePickerModal = ({
     const { colors, isDark } = useTheme();
     const [tempDate, setTempDate] = useState<Date>(() => parseYYYYMMDD(value));
 
-    // Keep tempDate in sync whenever modal becomes visible or value changes
+    // Keep tempDate in sync whenever modal becomes visible or value changes (iOS spinner only)
     useEffect(() => {
-        if (visible) {
+        if (visible && Platform.OS === 'ios') {
             setTempDate(parseYYYYMMDD(value));
         }
     }, [visible, value]);
 
+    // ── Android: the native dialog is one-shot (mount → opens dialog). ─────────
+    // The library re-runs its open() effect whenever the `onChange` prop identity
+    // or the value timestamp changes, and a re-opened dialog resets/flickers.
+    // The old code passed an inline onChange (new identity every render) AND a
+    // stale `tempDate` state (dialog first opened on 2000-01-01 or the previous
+    // pick, then jumped) — that was the "glitchy calendar".
+    // Fix: stable onChange via ref + value parsed fresh from props at render time.
+    const confirmRef = useRef(onConfirm);
+    confirmRef.current = onConfirm;
+    const closeRef = useRef(onClose);
+    closeRef.current = onClose;
+
+    const handleNativeChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
+        closeRef.current();
+        if (event.type === 'set' && selectedDate) {
+            confirmRef.current(formatYYYYMMDD(selectedDate));
+        }
+    }, []);
+
     if (!visible) return null;
 
-    // Android: DateTimePicker is rendered directly as a native dialog
+    // Android: mounting DateTimePicker opens the native dialog directly
     if (Platform.OS === 'android') {
         return (
             <DateTimePicker
-                value={tempDate}
+                value={parseYYYYMMDD(value)}
                 mode="date"
                 display="default"
                 maximumDate={maximumDate}
                 minimumDate={minimumDate}
-                onChange={(event: DateTimePickerEvent, selectedDate?: Date) => {
-                    onClose();
-                    if (event.type === 'set' && selectedDate) {
-                        const formatted = formatYYYYMMDD(selectedDate);
-                        onConfirm(formatted);
-                    }
-                }}
+                onChange={handleNativeChange}
             />
         );
     }

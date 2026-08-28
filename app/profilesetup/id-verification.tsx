@@ -141,6 +141,9 @@ const IDVerificationScreen = () => {
                     'This National Identification Number (NIN) is already linked and verified on another Eden account. Each user may only operate one verified account.',
                     [{ text: 'OK' }]
                 );
+            } else if (msg.includes('NIN verification attempts') || msg.includes('before your next NIN verification attempt') || msg.includes('temporarily locked')) {
+                // Rate limit hit (server-side) — show the exact wait time, no more provider calls
+                Alert.alert('Hold on ⏳', msg, [{ text: 'OK' }]);
             } else {
                 Alert.alert('Verification Failed', 'We could not verify your identity at this time. Please check your details and try again.');
             }

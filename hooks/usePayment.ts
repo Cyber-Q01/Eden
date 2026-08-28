@@ -122,12 +122,22 @@ export const usePayment = () => {
   const confirmRental = async (rentalId: string): Promise<boolean> => {
     setLoading(true);
     try {
+      let released: boolean | null = null;
       try {
-        await callEdgeFunction('release-payment', 'POST', { rental_id: rentalId });
+        // release-payment v2 verifies the transfer inside the function
+        // (up to ~35s on queued live transfers) — give it room.
+        const data = await callEdgeFunction<{ released?: boolean }>(
+          'release-payment', 'POST', { rental_id: rentalId }, undefined, { timeout: 45000 }
+        );
+        released = data?.released ?? null;
       } catch (edgeErr) {
-        await callEdgeFunction('confirm-rental', 'POST', { rental_id: rentalId });
+        await callEdgeFunction('confirm-rental', 'POST', { rental_id: rentalId }, undefined, { timeout: 45000 });
       }
-      showSuccess('Apartment confirmed! Funds released to the owner.');
+      if (released === false) {
+        showSuccess('Apartment confirmed! Funds are being released to the owner — this can take a few minutes.');
+      } else {
+        showSuccess('Apartment confirmed! Funds released to the owner.');
+      }
       return true;
     } catch (e) {
       const err = await handleError(e);

@@ -2,8 +2,11 @@ import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { withTimeout } from './timeout';
 
-// Google OAuth web (OOB) client id — required for Android Play Services sign-in
-const WEB_CLIENT_ID = '495613775079-90oebo0gq73l2r8lntfv4ji2ut8pil2n.apps.googleusercontent.com';
+// Google OAuth web client id — required for Android Play Services sign-in.
+// Override by setting EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env (rebuild after
+// changing — the value is baked in at bundle time). The fallback below is the
+// current production client id.
+const WEB_CLIENT_ID = (process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '495613775079-90oebo0gq73l2r8lntfv4ji2ut8pil2n.apps.googleusercontent.com').trim();
 
 // Google OAuth client id of type "iOS" — required for Google sign-in on iOS.
 // Create it in Google Cloud Console (Credentials → Create OAuth client ID →

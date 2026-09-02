@@ -3,95 +3,90 @@ import ScreenWrapper from '@/components/ScreenWrapper';
 import { useTheme } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
     ActivityIndicator,
     FlatList,
     Image,
-    LayoutAnimation,
     Linking,
-    Platform,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
-    UIManager
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useInspections, InspectionBooking } from '../../hooks/useInspections';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// All inspection cards render COLLAPSED (no expand/collapse dropdown).
+// The vital info — property, date & time, renter — is always visible on the card.
 
 const InspectionsScreen = () => {
     const router = useRouter();
     const { colors } = useTheme();
     const { role } = useAuth();
     const { inspections, loading, fetchInspections } = useInspections();
-    const [expandedId, setExpandedId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchInspections();
     }, [fetchInspections]);
 
-    const toggleExpand = (id: string) => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setExpandedId(expandedId === id ? null : id);
+    const openBookingConfirmation = (item: InspectionBooking) => {
+        const dateStr = new Date(item.preferred_date).toLocaleDateString('en-NG', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+        });
+        const landlordName = (item.property as any)?.landlord
+            ? `${(item.property as any).landlord.first_name || ''} ${(item.property as any).landlord.last_name || ''}`.trim()
+            : 'Landlord';
+
+        // Combine preferred_date and preferred_time into an ISO string
+        const bookingDate = new Date(item.preferred_date);
+        const timeParts = item.preferred_time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+        if (timeParts) {
+            let hours = parseInt(timeParts[1]);
+            const minutes = parseInt(timeParts[2]);
+            const ampm = timeParts[3];
+            if (ampm) {
+                if (ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+                if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+            }
+            bookingDate.setHours(hours);
+            bookingDate.setMinutes(minutes);
+        }
+
+        router.push({
+            pathname: '/shared-screens/BookingConfirmationScreen',
+            params: {
+                property_id: item.property_id,
+                date: dateStr,
+                time: item.preferred_time + ' WAT',
+                property: item.property?.title || '',
+                address: item.property?.location || '',
+                landlord: landlordName,
+                raw_date: bookingDate.toISOString(),
+            }
+        });
     };
 
     const renderItem = ({ item }: { item: InspectionBooking }) => {
-        const isExpanded = expandedId === item.id;
         const propertyImage = item.property?.images?.[0];
+        const dateLabel = new Date(item.preferred_date).toLocaleDateString('en-NG', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+        });
 
         return (
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <TouchableOpacity 
-                    style={styles.cardHeader} 
-                    onPress={() => {
-                        if (role === 'TENANT') {
-                            const dateStr = new Date(item.preferred_date).toLocaleDateString('en-NG', { 
-                                weekday: 'long', 
-                                day: 'numeric', 
-                                month: 'short', 
-                                year: 'numeric' 
-                            });
-                            const landlordName = (item.property as any)?.landlord
-                                ? `${(item.property as any).landlord.first_name || ''} ${(item.property as any).landlord.last_name || ''}`.trim()
-                                : 'Landlord';
-
-                            // Combine preferred_date and preferred_time into an ISO string
-                            const bookingDate = new Date(item.preferred_date);
-                            const timeParts = item.preferred_time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
-                            if (timeParts) {
-                                let hours = parseInt(timeParts[1]);
-                                const minutes = parseInt(timeParts[2]);
-                                const ampm = timeParts[3];
-                                if (ampm) {
-                                    if (ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
-                                    if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
-                                }
-                                bookingDate.setHours(hours);
-                                bookingDate.setMinutes(minutes);
-                            }
-
-                            router.push({
-                                pathname: '/shared-screens/BookingConfirmationScreen',
-                                params: {
-                                    property_id: item.property_id,
-                                    date: dateStr,
-                                    time: item.preferred_time + ' WAT',
-                                    property: item.property?.title || '',
-                                    address: item.property?.location || '',
-                                    landlord: landlordName,
-                                    raw_date: bookingDate.toISOString(),
-                                }
-                            });
-                        } else {
-                            toggleExpand(item.id);
-                        }
-                    }}
-                    activeOpacity={0.7}
+                {/* Header: property + date/time + status (tenants tap to open booking details) */}
+                <TouchableOpacity
+                    style={styles.cardHeader}
+                    onPress={role === 'TENANT' ? () => openBookingConfirmation(item) : undefined}
+                    activeOpacity={role === 'TENANT' ? 0.7 : 1}
+                    disabled={role !== 'TENANT'}
                 >
                     <View style={styles.propertyInfo}>
                         {propertyImage ? (
@@ -105,113 +100,75 @@ const InspectionsScreen = () => {
                             <Text style={[styles.propertyTitle, { color: colors.text }]} numberOfLines={1}>
                                 {item.property?.title || 'Unknown Property'}
                             </Text>
-                            <Text style={[styles.dateTime, { color: colors.textSecondary }]}>
-                                {new Date(item.preferred_date).toLocaleDateString()} at {item.preferred_time}
-                            </Text>
+                            <View style={styles.dateTimeRow}>
+                                <Ionicons name="calendar-outline" size={13} color={colors.primary} />
+                                <Text style={[styles.dateTime, { color: colors.text }]}>
+                                    {dateLabel} at {item.preferred_time}
+                                </Text>
+                            </View>
                         </View>
                     </View>
-                    <View style={styles.statusBadgeWrap}>
-                        <View style={[styles.statusBadge, { backgroundColor: item.status === 'confirmed' ? '#E8F5E9' : '#FFF3E0' }]}>
-                            <Text style={[styles.statusText, { color: item.status === 'confirmed' ? '#2E7D32' : '#E65100' }]}>
-                                {item.status.toUpperCase()}
-                            </Text>
-                        </View>
-                        <Ionicons 
-                            name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-                            size={20} 
-                            color={colors.textSecondary} 
-                        />
+                    <View style={[styles.statusBadge, { backgroundColor: item.status === 'confirmed' ? '#E8F5E9' : '#FFF3E0' }]}>
+                        <Text style={[styles.statusText, { color: item.status === 'confirmed' ? '#2E7D32' : '#E65100' }]}>
+                            {item.status.toUpperCase()}
+                        </Text>
                     </View>
                 </TouchableOpacity>
 
-                {isExpanded && (
-                    <View style={[styles.expandedContent, { borderTopColor: colors.border }]}>
-                        <View style={styles.detailRow}>
-                            <Ionicons name="location-outline" size={16} color={colors.primary} />
-                            <Text style={[styles.detailText, { color: colors.textSecondary }]}>
-                                {item.property?.location}
-                            </Text>
-                        </View>
+                {/* Location — always visible */}
+                <View style={styles.bodyRow}>
+                    <Ionicons name="location-outline" size={15} color={colors.primary} />
+                    <Text style={[styles.detailText, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {item.property?.location}
+                    </Text>
+                </View>
 
-                        {role === 'LANDLORD' && item.renter && (
-                            <View style={[styles.renterCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                                <View style={styles.renterHeader}>
-                                    <View style={[styles.avatar, { backgroundColor: colors.primary + '20' }]}>
-                                        {item.renter.profile_photo ? (
-                                            <Image source={{ uri: item.renter.profile_photo }} style={styles.avatarImage} />
-                                        ) : (
-                                            <Text style={[styles.avatarInitial, { color: colors.primary }]}>
-                                                {item.renter.first_name[0]}
-                                            </Text>
-                                        )}
-                                    </View>
-                                    <View>
-                                        <Text style={[styles.renterName, { color: colors.text }]}>
-                                            {item.renter.first_name} {item.renter.last_name}
-                                        </Text>
-                                        <Text style={[styles.renterLabel, { color: colors.textSecondary }]}>Prospective Renter</Text>
-                                    </View>
-                                </View>
-                                <TouchableOpacity
-                                    style={[styles.chatBtn, { backgroundColor: colors.primary }]}
-                                    onPress={() => {
-                                        const renterAny: any = item.renter;
-                                        const phone = renterAny?.phone_number || renterAny?.phone;
-                                        if (phone) {
-                                            const clean = phone.replace(/[^0-9]/g, '');
-                                            Linking.openURL(`https://wa.me/234${clean.replace(/^0/, '').replace(/^234/, '')}`);
-                                        } else if (renterAny?.email) {
-                                            Linking.openURL(`mailto:${renterAny.email}?subject=Regarding%20Inspection%20for%20${encodeURIComponent(item.property?.title || 'Property')}`);
-                                        }
-                                    }}
-                                >
-                                    <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
-                                    <Text style={styles.chatBtnText}>Message</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
-                        {item.notes ? (
-                            <View style={styles.noteBox}>
-                                <Text style={[styles.noteLabel, { color: colors.text }]}>Renter's Note:</Text>
-                                <Text style={[styles.noteText, { color: colors.textSecondary }]}>{item.notes}</Text>
-                            </View>
-                        ) : null}
-
-                        <View style={styles.actionRow}>
-                            <View>
-                                <Text style={[styles.bookedOn, { color: colors.textSecondary }]}>
-                                    Booked on {new Date(item.created_at).toLocaleDateString()}
-                                </Text>
-                                {role === 'TENANT' && (
-                                    <TouchableOpacity 
-                                        style={[styles.applyNowBtn, { backgroundColor: colors.primary }]}
-                                        onPress={() => router.push({
-                                            pathname: '/shared-screens/ApplicationScreen',
-                                            params: {
-                                                id: item.property?.id,
-                                                title: item.property?.title,
-                                                price: item.property?.price?.toString(),
-                                                location: item.property?.location
-                                            }
-                                        })}
-                                    >
-                                        <Text style={styles.applyNowBtnText}>Apply Now</Text>
-                                        <Ionicons name="arrow-forward" size={14} color="#fff" />
-                                    </TouchableOpacity>
+                {/* Renter — always visible (landlord) */}
+                {role === 'LANDLORD' && item.renter && (
+                    <View style={[styles.renterCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <View style={styles.renterHeader}>
+                            <View style={[styles.avatar, { backgroundColor: colors.primary + '20' }]}>
+                                {item.renter.profile_photo ? (
+                                    <Image source={{ uri: item.renter.profile_photo }} style={styles.avatarImage} />
+                                ) : (
+                                    <Text style={[styles.avatarInitial, { color: colors.primary }]}>
+                                        {item.renter.first_name[0]}
+                                    </Text>
                                 )}
                             </View>
-                            {role === 'TENANT' && (
-                                <TouchableOpacity 
-                                    style={styles.helpBtn}
-                                    onPress={() => router.push('/shared-screens/HelpSupportScreen')}
-                                >
-                                    <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>Get Help</Text>
-                                </TouchableOpacity>
-                            )}
+                            <View>
+                                <Text style={[styles.renterName, { color: colors.text }]}>
+                                    {item.renter.first_name} {item.renter.last_name}
+                                </Text>
+                                <Text style={[styles.renterLabel, { color: colors.textSecondary }]}>Prospective Renter</Text>
+                            </View>
                         </View>
+                        <TouchableOpacity
+                            style={[styles.chatBtn, { backgroundColor: colors.primary }]}
+                            onPress={() => {
+                                const renterAny: any = item.renter;
+                                const phone = renterAny?.phone_number || renterAny?.phone;
+                                if (phone) {
+                                    const clean = phone.replace(/[^0-9]/g, '');
+                                    Linking.openURL(`https://wa.me/234${clean.replace(/^0/, '').replace(/^234/, '')}`);
+                                } else if (renterAny?.email) {
+                                    Linking.openURL(`mailto:${renterAny.email}?subject=Regarding%20Inspection%20for%20${encodeURIComponent(item.property?.title || 'Property')}`);
+                                }
+                            }}
+                        >
+                            <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
+                            <Text style={styles.chatBtnText}>Message</Text>
+                        </TouchableOpacity>
                     </View>
                 )}
+
+                {/* Booked on — always visible */}
+                <View style={styles.bodyRow}>
+                    <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
+                    <Text style={[styles.bookedOn, { color: colors.textSecondary }]}>
+                        Booked on {new Date(item.created_at).toLocaleDateString('en-NG')}
+                    </Text>
+                </View>
             </View>
         );
     };
@@ -241,8 +198,8 @@ const InspectionsScreen = () => {
                             <Ionicons name="calendar-outline" size={64} color={colors.border} />
                             <Text style={[styles.emptyTitle, { color: colors.text }]}>No Inspections Yet</Text>
                             <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                                {role === 'LANDLORD' 
-                                    ? "You haven't received any inspection requests yet." 
+                                {role === 'LANDLORD'
+                                    ? "You haven't received any inspection requests yet."
                                     : "Book an inspection for a property to see it here."}
                             </Text>
                         </View>
@@ -295,34 +252,33 @@ const styles = StyleSheet.create({
     propertyTitle: {
         fontSize: 15,
         fontWeight: '700',
-        marginBottom: 2,
+        marginBottom: 3,
     },
-    dateTime: {
-        fontSize: 12,
-    },
-    statusBadgeWrap: {
+    dateTimeRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 5,
+    },
+    dateTime: {
+        fontSize: 13,
+        fontWeight: '700',
     },
     statusBadge: {
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 6,
+        marginLeft: 8,
     },
     statusText: {
         fontSize: 10,
         fontWeight: '800',
     },
-    expandedContent: {
-        padding: 16,
-        borderTopWidth: StyleSheet.hairlineWidth,
-    },
-    detailRow: {
+    bodyRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 16,
+        gap: 7,
+        paddingHorizontal: 12,
+        paddingBottom: 10,
     },
     detailText: {
         fontSize: 13,
@@ -332,15 +288,17 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        marginHorizontal: 12,
+        marginBottom: 10,
         padding: 12,
         borderRadius: 12,
         borderWidth: 1,
-        marginBottom: 16,
     },
     renterHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
+        flex: 1,
     },
     avatar: {
         width: 36,
@@ -372,49 +330,15 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 8,
+        marginLeft: 8,
     },
     chatBtnText: {
         color: '#fff',
         fontSize: 12,
         fontWeight: '700',
     },
-    noteBox: {
-        marginBottom: 16,
-    },
-    noteLabel: {
-        fontSize: 13,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    noteText: {
-        fontSize: 13,
-        lineHeight: 18,
-    },
-    actionRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
     bookedOn: {
         fontSize: 11,
-    },
-    helpBtn: {
-        padding: 4,
-        alignSelf: 'flex-end',
-    },
-    applyNowBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 10,
-        marginTop: 10,
-    },
-    applyNowBtnText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: '700',
     },
     centered: {
         flex: 1,

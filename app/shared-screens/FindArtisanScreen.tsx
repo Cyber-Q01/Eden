@@ -19,6 +19,7 @@ import {
     View
 } from 'react-native';
 import BackButton from '../../components/BackButton';
+import CustomDatePickerModal, { formatYYYYMMDD, parseYYYYMMDD } from '../../components/CustomDatePickerModal';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useToast } from '../../components/Toast';
 import { useAuth } from '../../context/AuthContext';
@@ -79,7 +80,15 @@ const FindArtisanScreen = () => {
     const [selectedProperty, setSelectedProperty] = useState<any>(null);
     const [customAddress, setCustomAddress] = useState(params.property_address || '');
     const [jobDescription, setJobDescription] = useState('');
-    const [bookingDate, setBookingDate] = useState('Today');
+    // Preferred date — picked via the native date picker, never typed by hand.
+    // Stored as YYYY-MM-DD; defaults to today.
+    const [bookingDateISO, setBookingDateISO] = useState<string>(() => formatYYYYMMDD(new Date()));
+    const [showBookingDatePicker, setShowBookingDatePicker] = useState(false);
+    const bookingDate = (() => {
+        const d = parseYYYYMMDD(bookingDateISO);
+        if (formatYYYYMMDD(d) === formatYYYYMMDD(new Date())) return 'Today';
+        return d.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    })();
     const [bookingTime, setBookingTime] = useState('10:00 AM');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [successModalVisible, setSuccessModalVisible] = useState(false);
@@ -511,13 +520,14 @@ const FindArtisanScreen = () => {
                             <View style={styles.formRow}>
                                 <View style={{ flex: 1, marginRight: 8 }}>
                                     <Text style={[styles.formLabel, { color: colors.text }]}>Preferred Date</Text>
-                                    <TextInput
-                                        style={[styles.formInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
-                                        value={bookingDate}
-                                        onChangeText={setBookingDate}
-                                        placeholder="Today / Tomorrow"
-                                        placeholderTextColor={colors.textSecondary}
-                                    />
+                                    <TouchableOpacity
+                                        style={[styles.formInput, { borderColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                                        onPress={() => setShowBookingDatePicker(true)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                                        <Text style={{ color: colors.text, fontSize: 14, flex: 1 }}>{bookingDate}</Text>
+                                    </TouchableOpacity>
                                 </View>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[styles.formLabel, { color: colors.text }]}>Preferred Time</Text>
@@ -552,6 +562,16 @@ const FindArtisanScreen = () => {
                                 )}
                             </TouchableOpacity>
                         </View>
+
+                        {/* Preferred date picker (native dialog on Android, sheet on iOS) */}
+                        <CustomDatePickerModal
+                            visible={showBookingDatePicker}
+                            value={bookingDateISO}
+                            minimumDate={new Date()}
+                            title="Select Preferred Date"
+                            onConfirm={(dateStr) => setBookingDateISO(dateStr)}
+                            onClose={() => setShowBookingDatePicker(false)}
+                        />
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
